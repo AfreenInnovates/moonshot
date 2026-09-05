@@ -8,6 +8,7 @@ import { isRevealed, type MarkerDef, type Vec3 } from "../level";
 import { playSignal } from "../audio";
 import { useSession } from "../session";
 import { useGame, useRoomVisible } from "../store";
+import { roomById } from "../level";
 
 /** Screen-space neon chip, same language as the reference mock. */
 export function Label({
@@ -222,9 +223,14 @@ export function useMarker(def: MarkerDef): MarkerViewState {
       def.reveal === "discovery" &&
       !discovered,
     discover: () => {
-      discoverFn(def.id, def.label);
-      playSignal("discover");
-      if (spectating) sendDiscover(def.id);
+      const event = new CustomEvent("start-puzzle", {
+        detail: {
+          id: def.id,
+          label: def.label,
+          roomName: roomById(def.room).name,
+        },
+      });
+      window.dispatchEvent(event);
     },
   };
 }

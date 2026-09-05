@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "One Heist, Two Realities",
+  title: "Blind Run — One Thief. Multiple Views. One Way Out.",
   description:
-    "An asymmetric multiplayer heist: one blind thief, spectators who each watch a single room.",
+    "A real-time asymmetric multiplayer heist. One player can\u2019t see the whole picture. Your crew sees the facility, guides the thief, and finds the way out.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

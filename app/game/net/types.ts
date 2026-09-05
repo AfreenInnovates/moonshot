@@ -87,6 +87,8 @@ export type NetMessage =
   | { type: "discover"; itemId: string; by: string }
   /** a spectator sending a short call sign to the thief */
   | { type: "command"; command: CommandCode; by: string; t: number }
+  /** a spectator sending a powerup to the thief */
+  | { type: "powerup"; effect: "heal" | "invis"; by: string; t: number }
   /** a server-hosted TTS reference for the same room-scoped command */
   | ({ type: "voice" } & VoiceTransmission)
   | { type: "bye"; id: string };

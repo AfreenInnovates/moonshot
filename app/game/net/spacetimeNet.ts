@@ -193,9 +193,17 @@ export class SpacetimeNet implements NetClient {
           return;
         }
         const command = commandFromTone(row.tone);
-        if (!command) return;
-        const by = row.text.startsWith("command:") ? row.text.slice("command:".length) : `${this.code}:?`;
-        for (const cb of this.listeners) cb({ type: "command", command, by, t: Number(row.at) });
+        if (command) {
+          const by = row.text.startsWith("command:") ? row.text.slice("command:".length) : `${this.code}:?`;
+          for (const cb of this.listeners) cb({ type: "command", command, by, t: Number(row.at) });
+          return;
+        }
+
+        if (row.tone.startsWith("powerup:")) {
+          const effect = row.tone.slice("powerup:".length) as "heal" | "invis";
+          const by = row.text;
+          for (const cb of this.listeners) cb({ type: "powerup", effect, by, t: Number(row.at) });
+        }
       });
 
       conn.subscriptionBuilder()
@@ -428,6 +436,12 @@ export class SpacetimeNet implements NetClient {
       void this.conn.reducers.discoverItem({ code: this.code, itemId: msg.itemId });
     } else if (msg.type === "command") {
       void this.sendSpacetimeCommand(msg);
+    } else if (msg.type === "powerup") {
+      void this.conn.reducers.logEvent({
+        code: this.code,
+        tone: `powerup:${msg.effect}`,
+        text: msg.by,
+      });
     }
   }
 

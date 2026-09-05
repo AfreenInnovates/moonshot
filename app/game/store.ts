@@ -89,6 +89,8 @@ export interface GameState {
   resetSeq: number;
   log: LogEntry[];
   lastCommand: CommandTransmission | null;
+  intelPoints: number;
+  invisibleUntil: number;
 
   setMode: (m: GameMode) => void;
   setView: (v: ViewMode) => void;
@@ -110,6 +112,9 @@ export interface GameState {
   reset: () => void;
   /** spectators mirror the thief client's world */
   applySnapshot: (s: Snapshot) => void;
+  addIntel: (n: number) => void;
+  spendIntel: (n: number, effect: "heal" | "invis") => void;
+  applyPowerUp: (effect: "heal" | "invis", by: string) => void;
 }
 
 const initial = {
@@ -133,6 +138,8 @@ const initial = {
   prompt: null as string | null,
   log: [] as LogEntry[],
   lastCommand: null as CommandTransmission | null,
+  intelPoints: 0,
+  invisibleUntil: 0,
 };
 
 export const useGame = create<GameState>()((set, get) => ({
@@ -267,6 +274,25 @@ export const useGame = create<GameState>()((set, get) => ({
   reset: () => {
     logSeq = 0;
     set((s) => ({ ...initial, resetSeq: s.resetSeq + 1 }));
+  },
+
+  addIntel: (n) => set((s) => ({ intelPoints: s.intelPoints + n })),
+
+  spendIntel: (n, effect) => {
+    const s = get();
+    if (s.intelPoints >= n) {
+      set({ intelPoints: s.intelPoints - n });
+      // The component calling this should also emit the net message
+    }
+  },
+
+  applyPowerUp: (effect, by) => {
+    if (effect === "heal") {
+      get().heal(25, `Power-up from ${by}`);
+    } else if (effect === "invis") {
+      set({ invisibleUntil: Date.now() + 10000 });
+      get().push(`Invisibility (10s) active - Power-up from ${by}`, "good");
+    }
   },
 
   applySnapshot: (snap) => {

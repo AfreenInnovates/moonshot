@@ -51,12 +51,15 @@ interface SessionState {
   onDiscover: (cb: (itemId: string) => void) => () => void;
   onCommand: (cb: (command: CommandCode, by: string) => void) => () => void;
   onVoice: (cb: (voice: VoiceTransmission) => void) => () => void;
+  sendPowerUp: (effect: "heal" | "invis") => void;
+  onPowerUp: (cb: (effect: "heal" | "invis", by: string) => void) => () => void;
 }
 
 const snapshotSubs = new Set<(s: Snapshot) => void>();
 const discoverSubs = new Set<(id: string) => void>();
 const commandSubs = new Set<(command: CommandCode, by: string) => void>();
 const voiceSubs = new Set<(voice: VoiceTransmission) => void>();
+const powerUpSubs = new Set<(effect: "heal" | "invis", by: string) => void>();
 let unsubscribe: (() => void) | null = null;
 
 function playerIdForRoom(code: string) {
@@ -127,6 +130,10 @@ export const useSession = create<SessionState>()((set, get) => ({
         }
         case "voice": {
           for (const cb of voiceSubs) cb(msg);
+          break;
+        }
+        case "powerup": {
+          for (const cb of powerUpSubs) cb(msg.effect, msg.by);
           break;
         }
       }
@@ -213,6 +220,7 @@ export const useSession = create<SessionState>()((set, get) => ({
     discoverSubs.clear();
     commandSubs.clear();
     voiceSubs.clear();
+    powerUpSubs.clear();
     set({
       net: null,
       status: "idle",
@@ -261,6 +269,17 @@ export const useSession = create<SessionState>()((set, get) => ({
   onVoice: (cb) => {
     voiceSubs.add(cb);
     return () => voiceSubs.delete(cb);
+  },
+
+  sendPowerUp: (effect) => {
+    const s = get();
+    if (!s.code || !s.myId || !s.net) return;
+    s.net.send({ type: "powerup", effect, by: s.myId, t: Date.now() });
+  },
+
+  onPowerUp: (cb) => {
+    powerUpSubs.add(cb);
+    return () => powerUpSubs.delete(cb);
   },
 }));
 

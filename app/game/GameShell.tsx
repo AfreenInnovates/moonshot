@@ -11,6 +11,7 @@ import { CAMERAS, MARKERS, roomById } from "./level";
 import { useSession } from "./session";
 import { useGame, VIEWS, type ViewMode } from "./store";
 import mascot from "../../ChatGPT Image Sep 6, 2026, 12_03_22 AM.png";
+import PuzzleModal from "./PuzzleModal";
 
 const GameCanvas = dynamic(() => import("./GameCanvas"), {
   ssr: false,
@@ -87,6 +88,10 @@ function DiscoveryPanel() {
           {found}/{mine.length}
         </span>
       </div>
+      <div className="mt-1 flex items-baseline justify-between text-[11px]">
+        <span className="text-[#ffd23b]">Intel Points</span>
+        <span className="font-mono font-bold text-[#ffd23b]">{useGame((s) => s.intelPoints)}</span>
+      </div>
       <div className="mt-2 border-y border-white/10 py-2">
         <div className="text-xs font-bold uppercase tracking-wider text-zinc-200">{roomDef.name}</div>
         <div className="mt-1 text-[10px] leading-snug text-zinc-500">{roomDef.blurb}</div>
@@ -116,26 +121,6 @@ function DiscoveryPanel() {
           );
         })}
       </ul>
-      <p className="mt-2 text-[10px] leading-snug text-zinc-500">
-        Click a pulsing blip to scan it. Call out what you find - the thief
-        cannot see any of this.
-      </p>
-    </div>
-  );
-}
-
-function RoomBrief() {
-  const mode = useGame((s) => s.mode);
-  if (mode.kind !== "spectator") return null;
-  const room = roomById(mode.watching);
-  return (
-    <div className="hud-panel w-[min(14rem,calc(100vw-1.5rem))] border-l-[#39ff88] p-3">
-      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-[0.18em] text-[#39ff88]">
-        <span>Room only</span><span>FEED / 01</span>
-      </div>
-      <div className="mt-2 border-t border-white/10 pt-2 text-sm font-black uppercase text-zinc-100">{room.name}</div>
-      <p className="mt-1 text-[10px] leading-snug text-zinc-500">{room.blurb}</p>
-      <div className="mt-2 border-t border-white/10 pt-2 text-[9px] uppercase tracking-widest text-zinc-600">Watch the room. Command the route.</div>
     </div>
   );
 }
@@ -220,6 +205,9 @@ function DangerBanner() {
 
 function CommandDeck() {
   const sendCommand = useSession((s) => s.sendCommand);
+  const sendPowerUp = useSession((s) => s.sendPowerUp);
+  const intelPoints = useGame((s) => s.intelPoints);
+  const spendIntel = useGame((s) => s.spendIntel);
   const [sent, setSent] = useState<CommandCode | null>(null);
   const lastSent = useRef<{ code: CommandCode; at: number } | null>(null);
 
@@ -255,38 +243,24 @@ function CommandDeck() {
         ))}
       </div>
       <div className="mt-1 text-[8px] uppercase tracking-widest text-zinc-600">Short callouts only. The thief is moving.</div>
-    </div>
-  );
-}
-
-function DirectionCard() {
-  const mode = useGame((s) => s.mode);
-  const fallbackRoom = useGame((s) => s.room);
-  const snapshot = useSession((s) => s.lastSnapshot);
-  const lastSnapshotAt = useSession((s) => s.lastSnapshotAt);
-  const [now, setNow] = useState(0);
-  useEffect(() => {
-    const tick = window.setInterval(() => setNow(Date.now()), 250);
-    return () => window.clearInterval(tick);
-  }, []);
-  if (mode.kind !== "spectator") return null;
-
-  const room = snapshot?.room ?? fallbackRoom;
-  const yaw = snapshot?.thief[3] ?? 0;
-  const degrees = ((yaw * 180) / Math.PI + 360) % 360;
-  const heading = degrees < 45 || degrees >= 315 ? "SOUTH" : degrees < 135 ? "EAST" : degrees < 225 ? "NORTH" : "WEST";
-  const roomName = roomById(room).name;
-  const live = !!snapshot && lastSnapshotAt > 0 && now > 0 && now - lastSnapshotAt < 700;
-
-  return (
-    <div className="hud-panel flex w-[min(14rem,calc(100vw-1.5rem))] items-center gap-3 border-l-[#ffd23b] p-3">
-      <div className="grid h-11 w-11 shrink-0 place-items-center border-2 border-[#ffd23b] bg-[#ffd23b]/10">
-        <span className="text-xl leading-none text-[#ffd23b]" style={{ transform: `rotate(${yaw}rad)` }}>↑</span>
-      </div>
-      <div>
-        <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.18em] text-[#ffd23b]"><span className={`h-1.5 w-1.5 rounded-full ${live ? "signal-pulse bg-[#24d17e]" : "bg-[#ff5b55]"}`} /> {live ? "thief vector / live" : "thief vector / waiting"}</div>
-        <div className="mt-1 font-mono text-sm font-black text-zinc-100">{heading}</div>
-        <div className="text-[10px] text-zinc-500">live / {roomName}</div>
+      <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
+        <div className="text-[9px] font-black uppercase tracking-[0.18em] text-emerald-400">Power-ups</div>
+        <div className="flex gap-2">
+          <button
+            disabled={intelPoints < 50}
+            onClick={() => { spendIntel(50, "heal"); sendPowerUp("heal"); playSignal("command"); }}
+            className="border border-white/20 bg-white/5 px-2 py-1 text-[9px] font-black uppercase text-emerald-400 disabled:opacity-30 hover:bg-white/10"
+          >
+            Heal (50 IP)
+          </button>
+          <button
+            disabled={intelPoints < 50}
+            onClick={() => { spendIntel(50, "invis"); sendPowerUp("invis"); playSignal("command"); }}
+            className="border border-white/20 bg-white/5 px-2 py-1 text-[9px] font-black uppercase text-[#e9ff4f] disabled:opacity-30 hover:bg-white/10"
+          >
+            Invis 10s (50 IP)
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -471,7 +445,19 @@ export default function GameShell({ title }: { title?: string }) {
   const leave = useSession((s) => s.leave);
   const onCommand = useSession((s) => s.onCommand);
   const onVoice = useSession((s) => s.onVoice);
+  const onPowerUp = useSession((s) => s.onPowerUp);
   const router = useRouter();
+
+  const [activePuzzle, setActivePuzzle] = useState<{ id: string; label: string; roomName: string } | null>(null);
+
+  useEffect(() => {
+    const handleStartPuzzle = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      setActivePuzzle(customEvent.detail);
+    };
+    window.addEventListener("start-puzzle", handleStartPuzzle);
+    return () => window.removeEventListener("start-puzzle", handleStartPuzzle);
+  }, []);
 
   const solo = mode.kind === "solo";
   const spectator = mode.kind === "spectator";
@@ -491,6 +477,11 @@ export default function GameShell({ title }: { title?: string }) {
     if (mode.kind !== "thief") return;
     return onCommand((code, by) => useGame.getState().receiveCommand(code, by));
   }, [mode.kind, onCommand]);
+
+  useEffect(() => {
+    if (mode.kind !== "thief") return;
+    return onPowerUp((effect, by) => useGame.getState().applyPowerUp(effect, by));
+  }, [mode.kind, onPowerUp]);
 
   useEffect(() => {
     if (mode.kind !== "thief") {
@@ -608,13 +599,11 @@ export default function GameShell({ title }: { title?: string }) {
 
       {/* right column */}
       <div className="pointer-events-none absolute right-3 top-[14rem] flex max-w-[calc(100vw-1.5rem)] flex-col items-end gap-3 sm:right-4 sm:top-[15.5rem]">
-        {spectator && <DirectionCard />}
         {view === "discovery" && (
           <div className="pointer-events-auto">
             <DiscoveryPanel />
           </div>
         )}
-        {spectator && <RoomBrief />}
         {!spectator && <Log />}
       </div>
 
@@ -708,6 +697,27 @@ export default function GameShell({ title }: { title?: string }) {
         <div className="pointer-events-none absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 border border-white/45">
           <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 bg-[#e9ff4f]" />
         </div>
+      )}
+
+      {activePuzzle && (
+        <PuzzleModal
+          itemLabel={activePuzzle.label}
+          roomName={activePuzzle.roomName}
+          onSuccess={() => {
+            const sendDiscover = useSession.getState().sendDiscover;
+            const discoverFn = useGame.getState().discover;
+            discoverFn(activePuzzle.id, activePuzzle.label);
+            if (spectator) sendDiscover(activePuzzle.id);
+            setActivePuzzle(null);
+          }}
+          onFailure={() => {
+            const sendDiscover = useSession.getState().sendDiscover;
+            const discoverFn = useGame.getState().discover;
+            discoverFn(activePuzzle.id, activePuzzle.label);
+            if (spectator) sendDiscover(activePuzzle.id);
+            setActivePuzzle(null);
+          }}
+        />
       )}
 
       <Onboarding />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useKeyboardControls } from "@react-three/drei";
 import {
@@ -22,32 +22,34 @@ const RUN = 5.8;
 const EYE = 0.8;
 
 /** The blocky figure, shared by the local and the streamed thief. */
-function ThiefFigure() {
+function ThiefFigure({ invisible }: { invisible?: boolean }) {
+  const opacity = invisible ? 0.3 : 1;
+  const transparent = invisible;
   return (
     <group>
       <mesh position={[-0.13, 0.35, 0]}>
         <boxGeometry args={[0.2, 0.7, 0.24]} />
-        <meshStandardMaterial color="#1b1c20" roughness={0.9} />
+        <meshStandardMaterial color="#1b1c20" roughness={0.9} transparent={transparent} opacity={opacity} />
       </mesh>
       <mesh position={[0.13, 0.35, 0]}>
         <boxGeometry args={[0.2, 0.7, 0.24]} />
-        <meshStandardMaterial color="#1b1c20" roughness={0.9} />
+        <meshStandardMaterial color="#1b1c20" roughness={0.9} transparent={transparent} opacity={opacity} />
       </mesh>
       <mesh position={[0, 1.03, 0]}>
         <boxGeometry args={[0.56, 0.72, 0.3]} />
-        <meshStandardMaterial color="#101318" roughness={0.9} />
+        <meshStandardMaterial color="#101318" roughness={0.9} transparent={transparent} opacity={opacity} />
       </mesh>
       <mesh position={[-0.36, 1.03, 0]}>
         <boxGeometry args={[0.16, 0.66, 0.22]} />
-        <meshStandardMaterial color="#101318" roughness={0.9} />
+        <meshStandardMaterial color="#101318" roughness={0.9} transparent={transparent} opacity={opacity} />
       </mesh>
       <mesh position={[0.36, 1.03, 0]}>
         <boxGeometry args={[0.16, 0.66, 0.22]} />
-        <meshStandardMaterial color="#101318" roughness={0.9} />
+        <meshStandardMaterial color="#101318" roughness={0.9} transparent={transparent} opacity={opacity} />
       </mesh>
       <mesh position={[0, 1.57, 0]}>
         <boxGeometry args={[0.36, 0.38, 0.34]} />
-        <meshStandardMaterial color="#e8b02a" roughness={0.75} />
+        <meshStandardMaterial color="#e8b02a" roughness={0.75} transparent={transparent} opacity={opacity} />
       </mesh>
     </group>
   );
@@ -177,6 +179,12 @@ function LocalThief() {
     if (overlay.current) overlay.current.position.set(t.x, 0, t.z);
   });
 
+  const [invisible, setInvisible] = useState(false);
+  useFrame(() => {
+    const isNowInvis = useGame.getState().invisibleUntil > Date.now();
+    if (invisible !== isNowInvis) setInvisible(isNowInvis);
+  });
+
   const dead = hp <= 0;
 
   return (
@@ -195,7 +203,7 @@ function LocalThief() {
       >
         <CapsuleCollider args={[0.5, 0.32] as [number, number]} />
         <group ref={visual} position={[0, -0.85, 0]} visible={!firstPerson}>
-          <ThiefFigure />
+          <ThiefFigure invisible={invisible} />
           <ContactShade />
           {!firstPerson && <HeadingBeacon />}
         </group>
@@ -231,7 +239,11 @@ function RemoteThief() {
   const watching = mode.kind === "spectator" ? mode.watching : null;
   const inMyRoom = watching !== null && thiefRoom === watching;
 
+  const [invisible, setInvisible] = useState(false);
   useFrame((_, rawDt) => {
+    const isNowInvis = useGame.getState().invisibleUntil > Date.now();
+    if (invisible !== isNowInvis) setInvisible(isNowInvis);
+    
     const g = group.current;
     const n = runtime.netThief;
     if (!g) return;
@@ -247,7 +259,7 @@ function RemoteThief() {
 
   return (
     <group ref={group} visible={false}>
-      <ThiefFigure />
+      <ThiefFigure invisible={invisible} />
       <ContactShade />
       <HeadingBeacon />
       {inMyRoom && (

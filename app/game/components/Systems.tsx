@@ -121,7 +121,8 @@ export default function Systems() {
 
     /* --- alarm meter ------------------------------------------------ */
     const now = performance.now() / 1000;
-    const seen = runtime.seenBy.size > 0 && store.hp > 0;
+    const isVisible = store.invisibleUntil < Date.now();
+    const seen = isVisible && runtime.seenBy.size > 0 && store.hp > 0;
     if (seen) runtime.lastSeen = now;
     alarm.current = THREE.MathUtils.clamp(
       alarm.current + (seen ? 22 : -20) * dt,
