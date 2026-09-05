@@ -30,7 +30,20 @@ export interface RoomDef {
   /** contents stay hidden from spectators until the thief walks in */
   fog: boolean;
   floor: string;
-  /** spectator camera pose used while the thief is in this room */
+  /**
+   * Spectator camera pose for this room.
+   *
+   * For the three watchable rooms this sits *behind the door the thief walks in
+   * through*, looking into the room along the same axis they walk. That is what
+   * makes a callout mean anything: the spectator's screen-right is the thief's
+   * right, so "LEFT" is the same left for both of them.
+   *
+   * Two rules when touching these. Keep `pos` and `target` on the door's axis -
+   * any yaw between them twists that mapping. And keep them far enough back to
+   * hold all four corners of the room at a 45 degree vertical fov, including
+   * the near wall the thief comes through: all three sit ~22-24 units out at
+   * about 54 degrees, which fits the room at 16:9 and at 4:3.
+   */
   cam: { pos: Vec3; target: Vec3 };
 }
 
@@ -72,7 +85,8 @@ export const ROOMS: RoomDef[] = [
     bounds: { minX: -5.5, maxX: 5.5, minZ: -7, maxZ: 7 },
     fog: true,
     floor: "#7b7770",
-     cam: { pos: [0, 14, 15], target: [0, 0.2, 0] },
+    // entered from the entrance hall, due south
+    cam: { pos: [0, 18.5, 13], target: [0, 0.6, 0] },
   },
   {
     id: "wcorr",
@@ -99,7 +113,8 @@ export const ROOMS: RoomDef[] = [
     bounds: { minX: -22, maxX: -8, minZ: -7, maxZ: 7 },
     fog: true,
     floor: "#78746d",
-     cam: { pos: [-15, 14, 7], target: [-15, 0.2, 0] },
+    // door is in the east wall (x = -8, z = 2.5): look west, the way they walk
+    cam: { pos: [-1, 20, 2.5], target: [-15, 0.6, 2.5] },
   },
   {
     id: "vault",
@@ -108,7 +123,8 @@ export const ROOMS: RoomDef[] = [
     bounds: { minX: 8, maxX: 22, minZ: -7, maxZ: 7 },
     fog: true,
     floor: "#78746d",
-     cam: { pos: [15, 14, 7], target: [15, 0.2, 0] },
+    // entered through the west wall (x = 8, z = 2.5): look east, the way they walk
+    cam: { pos: [1, 20, 2.5], target: [15, 0.6, 2.5] },
   },
   {
     id: "annex",
@@ -122,6 +138,26 @@ export const ROOMS: RoomDef[] = [
 ];
 
 export const roomById = (id: RoomId) => ROOMS.find((r) => r.id === id)!;
+
+/** The rooms a spectator can be posted to. */
+export const WATCHED_ROOMS: RoomId[] = ["lobby", "sec", "vault"];
+
+/**
+ * Which spectator has the thief's ear, or null when nobody does.
+ *
+ * A spectator is on air exactly while the thief is standing in the room they
+ * were posted to - which is exactly while they can see the thief at all. Three
+ * people calling "LEFT" about three different rooms is worse than silence, so
+ * only one of them is ever live, and someone watching an empty room cannot
+ * steer a thief they are not looking at.
+ *
+ * The corridors, the entrance hall and the street belong to nobody on purpose:
+ * they are a few seconds of walking with nothing in them, and folding them into
+ * a neighbour would put a spectator on air over a room the thief has not
+ * reached yet.
+ */
+export const commandChannel = (thiefRoom: RoomId): RoomId | null =>
+  WATCHED_ROOMS.includes(thiefRoom) ? thiefRoom : null;
 
 export function roomAt(x: number, z: number): RoomId {
   for (const r of ROOMS) {

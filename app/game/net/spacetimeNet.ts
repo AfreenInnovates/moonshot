@@ -387,11 +387,23 @@ export class SpacetimeNet implements NetClient {
   }
 
   async createRoom(room: RoomState): Promise<RoomState | null> {
-    if (!this.conn) return null;
+    const conn = this.conn;
+    if (!conn) return null;
     try {
-      await this.conn.reducers.createRoom({ code: room.code, maxPlayers: room.maxPlayers, seed: room.seed, name: "Host" });
+      await conn.reducers.createRoom({
+        code: room.code,
+        maxPlayers: room.maxPlayers,
+        seed: room.seed,
+        name: "Host",
+      });
       return room;
     } catch {
+      // The module refuses a code it already holds. That is the normal case
+      // when the host reloads their own room - the room they wanted exists, so
+      // hand it back and let the join below reclaim their seat, rather than
+      // telling them their own room does not exist.
+      const existing = conn.db.gameRoom.code.find(room.code);
+      if (existing) return this.room ?? room;
       return null;
     }
   }

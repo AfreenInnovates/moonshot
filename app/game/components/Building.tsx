@@ -254,23 +254,42 @@ function RoomFog({ room }: { room: RoomDef }) {
   const b = room.bounds;
   const cx = (b.minX + b.maxX) / 2;
   const cz = (b.minZ + b.maxZ) / 2;
+  const w = b.maxX - b.minX - 0.1;
+  const d = b.maxZ - b.minZ - 0.1;
 
   return (
     <group>
-      <mesh position={[cx, ROOM_H / 2 - 0.1, cz]}>
-        <boxGeometry
-          args={[b.maxX - b.minX - 0.1, ROOM_H - 0.2, b.maxZ - b.minZ - 0.1]}
-        />
-        <meshBasicMaterial
-          ref={mat}
-          color="#1a212b"
-          transparent
-          opacity={0.94}
-        />
-      </mesh>
+      {/* A posted spectator already has nothing rendered inside the rooms they
+          were not given, so a full-height volume would only be a grey cloud
+          hanging in their shot. Shade the floor instead: the room reads as
+          sealed and the sightline into their own room stays clean. Solo play
+          keeps the tall block, because there the contents really are mounted
+          and the volume is what hides them. */}
+      {posted ? (
+        <mesh position={[cx, 0.06, cz]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[w, d]} />
+          <meshBasicMaterial
+            ref={mat}
+            color="#141a23"
+            transparent
+            opacity={0.94}
+            depthWrite={false}
+          />
+        </mesh>
+      ) : (
+        <mesh position={[cx, ROOM_H / 2 - 0.1, cz]}>
+          <boxGeometry args={[w, ROOM_H - 0.2, d]} />
+          <meshBasicMaterial
+            ref={mat}
+            color="#1a212b"
+            transparent
+            opacity={0.94}
+          />
+        </mesh>
+      )}
       {!explored && (
         <Label
-          position={[cx, 2.1, cz]}
+          position={[cx, posted ? 0.5 : 2.1, cz]}
           color="#6b7787"
           text={room.name.toUpperCase()}
           sub={posted ? "not your room" : "unexplored - follow the thief in"}

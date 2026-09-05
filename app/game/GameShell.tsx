@@ -7,8 +7,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { COMMANDS, commandByCode, type CommandCode } from "./commands";
 import Minimap from "./components/Minimap";
 import { clearVoiceQueue, enqueueVoice, playNarrationOnce, playSignal } from "./audio";
-import { CAMERAS, MARKERS, roomById } from "./level";
-import { useSession } from "./session";
+import { CAMERAS, commandChannel, MARKERS, roomById } from "./level";
+import { resolveRoom, useSession } from "./session";
 import { useGame, VIEWS, type ViewMode } from "./store";
 import mascot from "../../ChatGPT Image Sep 6, 2026, 12_03_22 AM.png";
 import PuzzleModal from "./PuzzleModal";
@@ -23,6 +23,21 @@ const GameCanvas = dynamic(() => import("./GameCanvas"), {
 });
 
 const HIDDEN = [...CAMERAS, ...MARKERS].filter((m) => m.reveal === "discovery");
+
+/**
+ * Is this sender the spectator posted to the sector the thief is standing in?
+ *
+ * The sender gates itself too, but the thief is the one who has to live with a
+ * bad callout, so the ear checks as well: a message already in flight when the
+ * thief crosses a door must not arrive as an instruction about the room they
+ * just left.
+ */
+function onLiveChannel(by: string) {
+  const session = useSession.getState();
+  const sender = resolveRoom(session.room)?.players.find((p) => p.id === by);
+  if (!sender?.watching) return false;
+  return commandChannel(useGame.getState().room) === sender.watching;
+}
 const noSubscribe = () => () => {};
 const readOnboardingCompletion = () => {
   try {
@@ -208,21 +223,45 @@ function CommandDeck() {
   const sendPowerUp = useSession((s) => s.sendPowerUp);
   const intelPoints = useGame((s) => s.intelPoints);
   const spendIntel = useGame((s) => s.spendIntel);
+  const watching = useGame((s) => (s.mode.kind === "spectator" ? s.mode.watching : null));
+  const thiefRoom = useGame((s) => s.room);
   const [sent, setSent] = useState<CommandCode | null>(null);
   const lastSent = useRef<{ code: CommandCode; at: number } | null>(null);
 
+  // one spectator talks at a time: the one whose room the thief is standing in
+  const holder = commandChannel(thiefRoom);
+  const live = watching !== null && holder === watching;
+  const offAir = holder
+    ? `Thief is in the ${roomById(holder).name} - ${roomById(holder).name} is calling it.`
+    : `Thief is in the ${roomById(thiefRoom).name}. Nobody has the channel until they reach a watched room.`;
+
   return (
-    <div className="hud-panel w-[min(38rem,calc(100vw-1.5rem))] border-l-[#e9ff4f] p-2">
+    <div
+      className="hud-panel w-[min(38rem,calc(100vw-1.5rem))] p-2"
+      style={{ borderLeftColor: live ? "#e9ff4f" : "#4b5563" }}
+    >
       <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-1.5">
         <div>
-          <div className="text-[9px] font-black uppercase tracking-[0.18em] text-[#e9ff4f]">Commands / tap to transmit</div>
+          <div
+            className="text-[9px] font-black uppercase tracking-[0.18em]"
+            style={{ color: live ? "#e9ff4f" : "#8b94a1" }}
+          >
+            {live ? "Commands / tap to transmit" : "Channel held by another room"}
+          </div>
         </div>
-        <span className="font-mono text-[9px] text-zinc-600">THIEF CHANNEL / LIVE</span>
+        <span className="flex items-center gap-1.5 font-mono text-[9px] text-zinc-600">
+          <span
+            className={live ? "signal-pulse h-1.5 w-1.5 rounded-full" : "h-1.5 w-1.5 rounded-full"}
+            style={{ background: live ? "#e9ff4f" : "#4b5563" }}
+          />
+          {live ? "THIEF CHANNEL / LIVE" : "OFF AIR"}
+        </span>
       </div>
       <div className="mt-1.5 flex gap-1.5 overflow-x-auto">
         {COMMANDS.map((command) => (
           <button
             key={command.code}
+            disabled={!live}
             onClick={() => {
               const now = Date.now();
               if (lastSent.current?.code === command.code && now - lastSent.current.at < 350) return;
@@ -232,7 +271,7 @@ function CommandDeck() {
               setSent(command.code);
               window.setTimeout(() => setSent((current) => (current === command.code ? null : current)), 900);
             }}
-            className="min-w-[4.2rem] flex-1 border border-white/20 bg-white/[0.04] px-1.5 py-1.5 text-center transition hover:bg-white/10 active:translate-x-0.5 active:translate-y-0.5"
+            className="min-w-[4.2rem] flex-1 border border-white/20 bg-white/[0.04] px-1.5 py-1.5 text-center transition enabled:hover:bg-white/10 enabled:active:translate-x-0.5 enabled:active:translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-30"
             style={{ borderLeftColor: command.color, borderLeftWidth: 3 }}
           >
             <span className="block font-mono text-[10px] font-black" style={{ color: command.color }}>
@@ -242,7 +281,11 @@ function CommandDeck() {
           </button>
         ))}
       </div>
-      <div className="mt-1 text-[8px] uppercase tracking-widest text-zinc-600">Short callouts only. The thief is moving.</div>
+      <div className="mt-1 text-[8px] uppercase tracking-widest text-zinc-600">
+        {live
+          ? "Short callouts only. The thief is moving."
+          : `${offAir} You are back on the moment they walk into your room.`}
+      </div>
       <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
         <div className="text-[9px] font-black uppercase tracking-[0.18em] text-emerald-400">Power-ups</div>
         <div className="flex gap-2">
@@ -475,7 +518,10 @@ export default function GameShell({ title }: { title?: string }) {
 
   useEffect(() => {
     if (mode.kind !== "thief") return;
-    return onCommand((code, by) => useGame.getState().receiveCommand(code, by));
+    return onCommand((code, by) => {
+      if (!onLiveChannel(by)) return;
+      useGame.getState().receiveCommand(code, by);
+    });
   }, [mode.kind, onCommand]);
 
   useEffect(() => {
@@ -494,7 +540,10 @@ export default function GameShell({ title }: { title?: string }) {
       return session.room?.phase === "playing" && player?.role === "thief";
     };
     const unsubscribe = onVoice((voice) => {
-      if (valid()) enqueueVoice(voice.id, voice.audioUrl, valid);
+      if (!valid() || !onLiveChannel(voice.by)) return;
+      // re-check on playback too: a clip queued behind another must not still
+      // be talking about the last room by the time it is its turn
+      enqueueVoice(voice.id, voice.audioUrl, () => valid() && onLiveChannel(voice.by));
     });
     return () => {
       unsubscribe();

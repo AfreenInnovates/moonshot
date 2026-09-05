@@ -1,12 +1,64 @@
 "use client";
 
-import { useEffect, useRef, useState, type ComponentRef } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { roomById } from "../level";
+import { roomById, type RoomDef } from "../level";
 import { clampDt } from "../runtime";
 import { useGame } from "../store";
+
+/** Corners of a room, at floor level and at head height. */
+function roomCorners(room: RoomDef) {
+  const b = room.bounds;
+  const out: THREE.Vector3[] = [];
+  for (const x of [b.minX, b.maxX])
+    for (const z of [b.minZ, b.maxZ])
+      for (const y of [0, 2.4]) out.push(new THREE.Vector3(x, y, z));
+  return out;
+}
+
+/**
+ * How far back this room has to be viewed from to hold all of it on screen.
+ *
+ * The pose in `level.ts` fixes the *direction* - behind the door the thief
+ * walks in through - but the distance that fits depends on the window: a tall
+ * narrow window has a much narrower horizontal field than a wide one, and the
+ * far corners slide off the sides. Solving for it here means the spectator
+ * always gets the whole room whatever shape their window is, instead of a
+ * framing that only works on the laptop it was authored on.
+ */
+function fitDistance(room: RoomDef, aspect: number, fov: number) {
+  const target = new THREE.Vector3(...room.cam.target);
+  const dir = new THREE.Vector3(...room.cam.pos).sub(target).normalize();
+  const corners = roomCorners(room);
+  const probe = new THREE.PerspectiveCamera(fov, aspect, 0.1, 400);
+  const MARGIN = 0.92;
+
+  const overflow = (d: number) => {
+    probe.position.copy(target).addScaledVector(dir, d);
+    probe.lookAt(target);
+    probe.updateMatrixWorld(true);
+    probe.updateProjectionMatrix();
+    let worst = 0;
+    for (const c of corners) {
+      const p = c.clone().project(probe);
+      worst = Math.max(worst, Math.abs(p.x), Math.abs(p.y));
+    }
+    return worst;
+  };
+
+  const authored = new THREE.Vector3(...room.cam.pos).distanceTo(target);
+  if (overflow(authored) <= MARGIN) return authored;
+  let lo = authored;
+  let hi = authored * 4;
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) / 2;
+    if (overflow(mid) > MARGIN) lo = mid;
+    else hi = mid;
+  }
+  return hi;
+}
 
 /**
  * Mouse look for the thief. Uses pointer lock when the browser allows it and
@@ -70,12 +122,16 @@ function FirstPersonLook() {
  * to them and to the thief every time they call one out. Solo play keeps the
  * free camera, since there is nobody to give directions to.
  */
+const FOV = 45;
+
 function SpectatorRig({ active }: { active: boolean }) {
   const mode = useGame((s) => s.mode);
   const thiefRoom = useGame((s) => s.room);
   // a posted spectator stays on their own room; solo follows the thief around
   const room = mode.kind === "spectator" ? mode.watching : thiefRoom;
   const posted = mode.kind === "spectator";
+  // re-fit when the window changes shape, so a resize never crops the room
+  const aspect = useThree((s) => s.viewport.aspect);
   const cam = useRef<THREE.PerspectiveCamera>(null);
   const orbit = useRef<ComponentRef<typeof OrbitControls>>(null);
   const [start] = useState(() => roomById(room).cam);
@@ -85,12 +141,31 @@ function SpectatorRig({ active }: { active: boolean }) {
   });
   const following = useRef(true);
 
+  // how far back this window has to sit to hold the whole room
+  const fitted = useMemo(
+    () =>
+      posted
+        ? fitDistance(roomById(room), aspect || 1.6, FOV)
+        : new THREE.Vector3(...roomById(room).cam.pos).distanceTo(
+            new THREE.Vector3(...roomById(room).cam.target),
+          ),
+    [room, posted, aspect],
+  );
+
   useEffect(() => {
     const r = roomById(room);
-    want.current.pos.set(...r.cam.pos);
     want.current.target.set(...r.cam.target);
+    if (posted) {
+      // keep the authored direction, take whatever distance shows the room
+      const dir = new THREE.Vector3(...r.cam.pos)
+        .sub(want.current.target)
+        .normalize();
+      want.current.pos.copy(want.current.target).addScaledVector(dir, fitted);
+    } else {
+      want.current.pos.set(...r.cam.pos);
+    }
     following.current = true;
-  }, [room]);
+  }, [room, posted, fitted]);
 
   // hand the fresh target to the controls whenever they mount
   useEffect(() => {
@@ -119,7 +194,7 @@ function SpectatorRig({ active }: { active: boolean }) {
       <PerspectiveCamera
         ref={cam}
         makeDefault={active}
-        fov={45}
+        fov={FOV}
         near={0.1}
         far={400}
         position={start.pos}
@@ -132,8 +207,12 @@ function SpectatorRig({ active }: { active: boolean }) {
              turns under them and the thief's heading stays readable */
           enableRotate={!posted}
           enablePan={!posted}
-          minDistance={posted ? 6 : 4}
-          maxDistance={posted ? 26 : 40}
+          /* the posted framing already starts wide enough to see the whole
+             room and the door the thief comes through; this is only headroom
+             to lean in or pull further back, measured off that fitted distance
+             so it means the same thing on every window shape */
+          minDistance={posted ? fitted * 0.45 : 4}
+          maxDistance={posted ? fitted * 1.8 : 40}
           maxPolarAngle={posted ? 1.3 : 1.52}
           enableDamping
           dampingFactor={0.08}
