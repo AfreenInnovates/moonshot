@@ -270,7 +270,8 @@ export const join_room = spacetimedb.reducer(
       return;
     }
 
-    if (room.phase !== 'lobby') throw new Error('that run has already started');
+    if (room.phase !== 'lobby' && room.phase !== 'countdown')
+      throw new Error('that run has already started');
 
     let seats = 0;
     for (const p of ctx.db.player.iter()) if (p.room_code === code) seats++;
@@ -433,7 +434,8 @@ export const start_run = spacetimedb.reducer(
     if (!room) throw new Error('no such room');
     if (room.host !== ctx.sender.toHexString())
       throw new Error('only the host can start');
-    if (room.phase !== 'lobby') throw new Error('run already started');
+    if (room.phase !== 'lobby' && room.phase !== 'countdown')
+      throw new Error('run already started');
 
     let players = 0;
     for (const p of ctx.db.player.iter()) if (p.room_code === code) players++;

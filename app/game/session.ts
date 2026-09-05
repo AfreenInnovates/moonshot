@@ -191,7 +191,7 @@ export const useSession = create<SessionState>()((set, get) => ({
       !s.net ||
       !s.room ||
       !s.isHost ||
-      s.room.phase !== "lobby" ||
+      (s.room.phase !== "lobby" && s.room.phase !== "countdown") ||
       s.room.players.length < MIN_PLAYERS
     )
       return false;

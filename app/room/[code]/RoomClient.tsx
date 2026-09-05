@@ -326,7 +326,10 @@ export default function RoomClient({ code }: { code: string }) {
   const playerCount = room?.players.length ?? 0;
   const enoughPlayers = playerCount >= MIN_PLAYERS;
   const hostCanStart =
-    isHost && room?.phase === "lobby" && enoughPlayers && !starting;
+    isHost &&
+    (room?.phase === "lobby" || room?.phase === "countdown") &&
+    enoughPlayers &&
+    !starting;
   const waitingMessage = !room
     ? "Reading the room signal..."
     : room.phase === "countdown"

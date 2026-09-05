@@ -186,7 +186,8 @@ export function joinRoom(code: string, player: PlayerInfo): JoinResult {
     return { ok: true, room: publish({ ...room, players }) };
   }
   if (room.players.length >= room.maxPlayers) return { ok: false, reason: "full" };
-  if (room.phase !== "lobby") return { ok: false, reason: "unavailable" };
+  if (room.phase !== "lobby" && room.phase !== "countdown")
+    return { ok: false, reason: "unavailable" };
 
   const players = [
     ...room.players,
@@ -194,7 +195,7 @@ export function joinRoom(code: string, player: PlayerInfo): JoinResult {
   ];
   const hostId = room.hostId || player.id;
   // the second player through the door starts the clock
-  const kickOff = players.length >= MIN_PLAYERS;
+  const kickOff = room.phase === "lobby" && players.length >= MIN_PLAYERS;
 
   return {
     ok: true,
@@ -202,7 +203,7 @@ export function joinRoom(code: string, player: PlayerInfo): JoinResult {
       ...room,
       hostId,
       players,
-      phase: kickOff ? "countdown" : room.phase,
+       phase: kickOff ? "countdown" : room.phase,
       startsAt: kickOff ? Date.now() + COUNTDOWN_MS : room.startsAt,
     }),
   };
@@ -285,7 +286,8 @@ export function startRoom(code: string, playerId: string): StartRoomResult {
   const room = getRoom(code);
   if (!room) return { ok: false, error: "notfound" };
   if (room.hostId !== playerId) return { ok: false, error: "not-host" };
-  if (room.phase !== "lobby") return { ok: false, error: "started" };
+  if (room.phase !== "lobby" && room.phase !== "countdown")
+    return { ok: false, error: "started" };
   if (room.players.length < MIN_PLAYERS)
     return { ok: false, error: "not-ready" };
 
