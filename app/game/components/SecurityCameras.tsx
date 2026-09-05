@@ -65,9 +65,11 @@ function Camera({ def }: { def: CameraDef }) {
 
           {/* vision cone - spectator information, never drawn for the thief */}
           {revealed && (
+            /* apex sits on the lens and the cone widens away from it, so the
+               spectator reads the sweep as reach rather than as a funnel */
             <mesh
               position={[0, 0, -def.range / 2]}
-              rotation={[-Math.PI / 2, 0, 0]}
+              rotation={[Math.PI / 2, 0, 0]}
               renderOrder={1}
             >
               <coneGeometry args={[radius, def.range, 28, 1, true]} />

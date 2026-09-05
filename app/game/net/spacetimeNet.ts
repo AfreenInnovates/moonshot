@@ -83,6 +83,30 @@ const voiceFromEvent = (text: string): VoiceTransmission | null => {
   }
 };
 
+/**
+ * One SpacetimeDB identity per tab.
+ *
+ * A seat is `${code}:${identity}`, so every tab has to authenticate as somebody
+ * different or two people on one machine claim the same seat and the room looks
+ * like it only ever filled once. The suffix lives in sessionStorage: it
+ * survives a refresh - which is how a player gets their seat back - and a new
+ * tab starts a new person.
+ */
+function identitySuffix() {
+  const key = "heist:spacetime-tab";
+  try {
+    const stored = sessionStorage.getItem(key);
+    if (stored) return stored;
+    const fresh = Math.random().toString(36).slice(2, 10);
+    sessionStorage.setItem(key, fresh);
+    return fresh;
+  } catch {
+    // no session storage: a fresh identity every load still connects, it just
+    // cannot reclaim a seat across a refresh
+    return Math.random().toString(36).slice(2, 10);
+  }
+}
+
 /** SpacetimeDB transport used by the deployed application. */
 export class SpacetimeNet implements NetClient {
   readonly kind = "spacetime" as const;
@@ -103,7 +127,7 @@ export class SpacetimeNet implements NetClient {
 
     const host = process.env.NEXT_PUBLIC_SPACETIME_HOST || "wss://maincloud.spacetimedb.com";
     const database = process.env.NEXT_PUBLIC_SPACETIME_MODULE_NAME || "one-heist-spacetime";
-    const tokenKey = `heist:spacetime-token:${host}:${database}`;
+    const tokenKey = `heist:spacetime-token:${host}:${database}:${identitySuffix()}`;
     let token = "";
     try {
       token = localStorage.getItem(tokenKey) ?? "";
@@ -272,8 +296,10 @@ export class SpacetimeNet implements NetClient {
         role: p.role === "thief" || p.role === "spectator" ? p.role : null,
         watching: roomId(p.watching),
         joinedAt: Number(p.joinedAt),
-        connected: p.connected,
-        rejoinUntil: Number(p.rejoinUntil),
+        // the published module has no disconnect bookkeeping, so a seat that
+        // exists is a seat that is held
+        connected: true,
+        rejoinUntil: 0,
       });
     }
     const state: RoomState = {

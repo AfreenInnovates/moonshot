@@ -113,7 +113,7 @@ export interface GameState {
   /** spectators mirror the thief client's world */
   applySnapshot: (s: Snapshot) => void;
   addIntel: (n: number) => void;
-  spendIntel: (n: number, effect: "heal" | "invis") => void;
+  spendIntel: (n: number) => void;
   applyPowerUp: (effect: "heal" | "invis", by: string) => void;
 }
 
@@ -278,12 +278,11 @@ export const useGame = create<GameState>()((set, get) => ({
 
   addIntel: (n) => set((s) => ({ intelPoints: s.intelPoints + n })),
 
-  spendIntel: (n, effect) => {
+  // charging for a power-up only; the caller sends the net message that makes
+  // it happen, so a spectator with too few points never fires one off
+  spendIntel: (n) => {
     const s = get();
-    if (s.intelPoints >= n) {
-      set({ intelPoints: s.intelPoints - n });
-      // The component calling this should also emit the net message
-    }
+    if (s.intelPoints >= n) set({ intelPoints: s.intelPoints - n });
   },
 
   applyPowerUp: (effect, by) => {

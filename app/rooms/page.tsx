@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MAX_PLAYERS, newCode } from "../game/net/types";
 
 export default function RoomsPage() {
@@ -10,6 +10,14 @@ export default function RoomsPage() {
   const [size, setSize] = useState(4);
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const codeInput = useRef<HTMLInputElement>(null);
+
+  // arriving from a "Join a room" button: put the cursor where it is wanted
+  useEffect(() => {
+    if (window.location.hash !== "#join") return;
+    codeInput.current?.scrollIntoView({ block: "center" });
+    codeInput.current?.focus();
+  }, []);
 
   const create = () => {
     const c = newCode();
@@ -87,10 +95,10 @@ export default function RoomsPage() {
             <p className="mt-6 max-w-lg border-t border-[#111216]/20 pt-4 text-[11px] font-semibold leading-relaxed text-[#6c6b70]">Three spectators cover every room: lobby, security, vault. Fewer players means some rooms go unwatched. You can still start with two.</p>
           </section>
 
-          <section className="brutal-panel-dark p-5 text-[#f2eee5] sm:p-7">
+          <section id="join" className="brutal-panel-dark scroll-mt-6 p-5 text-[#f2eee5] sm:p-7">
             <div className="flex items-start justify-between gap-4 border-b border-[#f2eee5]/30 pb-4"><div><h2 className="text-xs font-black uppercase tracking-[0.2em]">Join with a code</h2><p className="mt-2 text-sm font-medium text-[#f2eee5]/65">Already have a crew? Drop into their signal.</p></div><span className="font-mono text-xs font-bold text-[#e9ff4f]">JOIN_02</span></div>
             <div className="mt-6 flex flex-wrap items-end gap-4">
-              <label className="flex flex-col gap-2"><span className="text-[10px] font-black uppercase tracking-widest text-[#f2eee5]/60">Room code</span><input value={code} onChange={(e) => { setCode(e.target.value.toUpperCase()); setError(null); }} onKeyDown={(e) => e.key === "Enter" && join()} placeholder="ABCDE" maxLength={6} className="w-40 border-2 border-[#f2eee5] bg-transparent px-3 py-3 font-mono text-sm tracking-[0.3em] text-[#f2eee5] outline-none placeholder:text-[#f2eee5]/30 focus:border-[#e9ff4f]" /></label>
+              <label className="flex flex-col gap-2"><span className="text-[10px] font-black uppercase tracking-widest text-[#f2eee5]/60">Room code</span><input ref={codeInput} value={code} onChange={(e) => { setCode(e.target.value.toUpperCase()); setError(null); }} onKeyDown={(e) => e.key === "Enter" && join()} placeholder="ABCDE" maxLength={6} className="w-40 border-2 border-[#f2eee5] bg-transparent px-3 py-3 font-mono text-sm tracking-[0.3em] text-[#f2eee5] outline-none placeholder:text-[#f2eee5]/30 focus:border-[#e9ff4f]" /></label>
               <button onClick={join} className="brutal-button-dark px-5 py-3">Join -&gt;</button>
             </div>
             {error && <p className="mt-4 border-l-2 border-[#ff5b55] pl-3 text-[11px] font-bold text-[#ff8b86]">{error}</p>}

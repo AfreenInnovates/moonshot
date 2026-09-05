@@ -64,10 +64,12 @@ function VisionCone({
   matRef: React.RefObject<THREE.MeshBasicMaterial | null>;
 }) {
   const radius = Math.tan(def.vision.fov) * def.vision.range;
+  // apex at the guard's eyes, base out at the far edge of their sight: the
+  // cone points away from them so its width reads as how far they can see
   return (
     <mesh
       position={[0, 1.35, -def.vision.range / 2]}
-      rotation={[-Math.PI / 2, 0, 0]}
+      rotation={[Math.PI / 2, 0, 0]}
       renderOrder={1}
     >
       <coneGeometry args={[radius, def.vision.range, 24, 1, true]} />

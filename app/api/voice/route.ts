@@ -70,12 +70,33 @@ export async function GET(request: Request) {
     }
   }
 
+  // Addressable by what it says, not by where it was made. The seven call
+  // signs are a fixed vocabulary, so any instance can serve any of them from
+  // its own cache - nothing has to survive a hop between serverless instances
+  // the way a one-off `?id=` asset does.
+  if (query.get("kind") === "command") {
+    const command = query.get("command");
+    if (!isCommand(command))
+      return Response.json({ error: "invalid command" }, { status: 400 });
+    try {
+      return audioResponse(
+        await createVoiceAsset(`command:${command}`, COMMAND_TEXT[command]),
+      );
+    } catch (error) {
+      return providerErrorResponse(error, "command synthesis failed");
+    }
+  }
+
+  // legacy per-asset lookup, still served when it happens to be local
   const id = query.get("id");
   const asset = id ? getVoiceAsset(id) : null;
   return asset
     ? audioResponse(asset)
     : Response.json({ error: "Audio expired" }, { status: 404 });
 }
+
+const commandAudioUrl = (command: CommandCode) =>
+  `/api/voice?kind=command&command=${encodeURIComponent(command)}`;
 
 export async function POST(request: Request) {
   const body = (await request.json()) as {
@@ -88,8 +109,10 @@ export async function POST(request: Request) {
 
   if (body.action === "synthesize") {
     try {
-      const asset = await createVoiceAsset(`command:${body.command}`, COMMAND_TEXT[body.command]);
-      return Response.json({ audioUrl: `/api/voice?id=${encodeURIComponent(asset.id)}` });
+      // synthesize here so a broken key fails loudly at send time, but hand
+      // back the stable URL rather than this instance's copy
+      await createVoiceAsset(`command:${body.command}`, COMMAND_TEXT[body.command]);
+      return Response.json({ audioUrl: commandAudioUrl(body.command) });
     } catch (error) {
       return providerErrorResponse(error, "command synthesis failed");
     }
@@ -109,9 +132,9 @@ export async function POST(request: Request) {
   // Preserve the existing visual command immediately, even if TTS is unavailable.
   broadcast(code, { type: "command", command: body.command, by: body.playerId, t: Date.now() });
 
-  let asset;
+  // warm the clip before announcing it, so nobody is sent a URL that 404s
   try {
-    asset = await createVoiceAsset(`command:${body.command}`, COMMAND_TEXT[body.command]);
+    await createVoiceAsset(`command:${body.command}`, COMMAND_TEXT[body.command]);
   } catch (error) {
     return providerErrorResponse(error, "room command synthesis failed");
   }
@@ -130,7 +153,7 @@ export async function POST(request: Request) {
     id: `${code}:${crypto.randomUUID()}`,
     command: body.command,
     by: body.playerId,
-    audioUrl: `/api/voice?id=${encodeURIComponent(asset.id)}`,
+    audioUrl: commandAudioUrl(body.command),
     t: Date.now(),
   });
   return Response.json({ ok: true, voice: true });

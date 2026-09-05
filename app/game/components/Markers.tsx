@@ -5,8 +5,6 @@ import { Html, Edges } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { isRevealed, type MarkerDef, type Vec3 } from "../level";
-import { playSignal } from "../audio";
-import { useSession } from "../session";
 import { useGame, useRoomVisible } from "../store";
 import { roomById } from "../level";
 
@@ -211,9 +209,6 @@ export function useMarker(def: MarkerDef): MarkerViewState {
   // a room is legible once the thief has been in it, or - in multiplayer - if
   // this is the one room you were posted to
   const visible = useRoomVisible(def.room);
-  const spectating = useGame((s) => s.mode.kind === "spectator");
-  const discoverFn = useGame((s) => s.discover);
-  const sendDiscover = useSession((s) => s.sendDiscover);
   const revealed = visible && isRevealed(def.reveal, view, discovered);
   return {
     revealed: revealed && (def.reveal === "spectator" || discovered),

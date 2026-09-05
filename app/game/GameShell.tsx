@@ -248,14 +248,14 @@ function CommandDeck() {
         <div className="flex gap-2">
           <button
             disabled={intelPoints < 50}
-            onClick={() => { spendIntel(50, "heal"); sendPowerUp("heal"); playSignal("command"); }}
+            onClick={() => { spendIntel(50); sendPowerUp("heal"); playSignal("command"); }}
             className="border border-white/20 bg-white/5 px-2 py-1 text-[9px] font-black uppercase text-emerald-400 disabled:opacity-30 hover:bg-white/10"
           >
             Heal (50 IP)
           </button>
           <button
             disabled={intelPoints < 50}
-            onClick={() => { spendIntel(50, "invis"); sendPowerUp("invis"); playSignal("command"); }}
+            onClick={() => { spendIntel(50); sendPowerUp("invis"); playSignal("command"); }}
             className="border border-white/20 bg-white/5 px-2 py-1 text-[9px] font-black uppercase text-[#e9ff4f] disabled:opacity-30 hover:bg-white/10"
           >
             Invis 10s (50 IP)
@@ -406,7 +406,7 @@ function Onboarding() {
             <h3 className="text-[10px] font-black uppercase tracking-widest text-[#ffd23b]">Controls</h3>
             <p className="mt-2">
               {mode.kind === "spectator"
-                ? "Drag to orbit, scroll to zoom, and use Watch / Discover to inspect your room."
+                ? "Your room is drawn from one fixed angle so directions always match. Scroll to zoom, and use Watch / Discover to inspect it."
                 : "WASD moves, Shift runs, E interacts, and click captures the mouse for looking around."}
             </p>
           </div>
@@ -653,12 +653,12 @@ export default function GameShell({ title }: { title?: string }) {
         <div className="hud-panel p-3 text-right text-[11px] leading-relaxed text-zinc-400">
           {spectator ? (
             <>
-              <div>drag to orbit · scroll to zoom</div>
+              <div>fixed view · scroll to zoom</div>
               <div>
                 <span className="text-zinc-200">Watch / Discover</span> switches
                 layer
               </div>
-              <div>you cannot leave this room</div>
+              <div>your room never rotates - left is the thief&apos;s left</div>
             </>
           ) : (
             <>
@@ -701,22 +701,17 @@ export default function GameShell({ title }: { title?: string }) {
 
       {activePuzzle && (
         <PuzzleModal
+          itemId={activePuzzle.id}
           itemLabel={activePuzzle.label}
           roomName={activePuzzle.roomName}
           onSuccess={() => {
-            const sendDiscover = useSession.getState().sendDiscover;
-            const discoverFn = useGame.getState().discover;
-            discoverFn(activePuzzle.id, activePuzzle.label);
-            if (spectator) sendDiscover(activePuzzle.id);
+            useGame.getState().discover(activePuzzle.id, activePuzzle.label);
+            if (spectator) useSession.getState().sendDiscover(activePuzzle.id);
             setActivePuzzle(null);
           }}
-          onFailure={() => {
-            const sendDiscover = useSession.getState().sendDiscover;
-            const discoverFn = useGame.getState().discover;
-            discoverFn(activePuzzle.id, activePuzzle.label);
-            if (spectator) sendDiscover(activePuzzle.id);
-            setActivePuzzle(null);
-          }}
+          // a cancelled or timed-out scan leaves the blip where it was, so
+          // nothing on the critical path can be lost to a mistap
+          onCancel={() => setActivePuzzle(null)}
         />
       )}
 

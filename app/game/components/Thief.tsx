@@ -156,11 +156,13 @@ function LocalThief() {
     const v = rb.linvel();
     rb.setLinvel({ x: move.x * speed, y: v.y, z: move.z * speed }, true);
 
-    if (moving) runtime.thiefYaw = Math.atan2(move.x, move.z);
+    // in first person the thief faces wherever they are looking, and that is
+    // the heading spectators steer by - a LEFT call has to mean the thief's
+    // left. Only the top-down views fall back to the travel direction.
+    if (firstPerson) runtime.thiefYaw = Math.atan2(fwd.x, fwd.z);
+    else if (moving) runtime.thiefYaw = Math.atan2(move.x, move.z);
     if (visual.current) {
-      visual.current.rotation.y = firstPerson
-        ? Math.atan2(fwd.x, fwd.z)
-        : runtime.thiefYaw;
+      visual.current.rotation.y = runtime.thiefYaw;
       bobT.current += moving ? dt * (down.sprint ? 12 : 8) : 0;
       visual.current.position.y = moving
         ? Math.abs(Math.sin(bobT.current)) * 0.05

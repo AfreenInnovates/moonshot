@@ -58,7 +58,8 @@ shared knowledge. A room a spectator is *not* posted to stays sealed to them.
 
 - `WASD` move, `Shift` run, `E` interact
 - Thief: click to look around (pointer lock, falls back to click-drag)
-- Spectator: drag to orbit, scroll to zoom, Watch/Discover to switch layer
+- Spectator: fixed view (scroll to zoom), Watch/Discover to switch layer. A posted spectator's
+  room never rotates or pans, so "left" always means the thief's left
 - Solo only: `1` / `2` / `3` switch view
 
 ## How the multiplayer works
@@ -72,8 +73,11 @@ Transports sit behind one small interface (`app/game/net/types.ts`):
 
 - **`spacetime` (default)** — rooms and world snapshots use the published SpacetimeDB module.
   This is the deployment transport and works across browsers and devices.
-- **`server` (local fallback)** — set `NEXT_PUBLIC_NET_TRANSPORT=server` to use the in-memory
-  Next server and SSE stream from `app/lib/roomStore.ts` and `app/api/rooms/*`.
+- **`server` (opt-in)** — set `NEXT_PUBLIC_NET_TRANSPORT=server` to use the in-memory
+  Next server and SSE stream from `app/lib/roomStore.ts` and `app/api/rooms/*`. Only usable
+  against a single long-lived `next dev` process: the rooms live in that process's memory, so
+  on a serverless deployment the thief's snapshots and the spectators' streams land in
+  different instances and spectator views never update.
 
 ## SpacetimeDB
 
@@ -87,8 +91,19 @@ against `spacetimedb@2.10`:
   server agree on who gets to be the thief.
 
 The browser-side adapter is wired in `app/game/net/spacetimeNet.ts`, with the generated-compatible
-client schema in `app/game/net/spacetime.ts`. The deployed client uses the module named by
-`NEXT_PUBLIC_SPACETIME_MODULE_NAME` (default: `one-heist-spacetime`) at
+client schema in `app/game/net/spacetime.ts`. That file has to mirror the **published** module
+exactly — SpacetimeDB addresses tables and reducers by index, so one extra column or reducer
+shifts every id after it and the first subscription update fails to decode. Check it against the
+live schema before changing it:
+
+```bash
+curl https://maincloud.spacetimedb.com/v1/database/one-heist-spacetime/schema?version=9
+```
+
+`spacetime/src/index.ts` is currently *ahead* of what is deployed (it adds spectator
+disconnect-grace bookkeeping); the client bindings track the deployed module, not this source.
+
+The deployed client uses the module named by `NEXT_PUBLIC_SPACETIME_MODULE_NAME` (default: `one-heist-spacetime`) at
 `NEXT_PUBLIC_SPACETIME_HOST` (default: `wss://maincloud.spacetimedb.com`).
 
 Spectator commands use the existing `log_event` reducer with a reserved `command:*` tone, so the
@@ -108,7 +123,7 @@ app/
 ```
 
 ```
-spacetime/               SpacetimeDB module (tables + reducers), not yet wired up
+spacetime/               SpacetimeDB module (tables + reducers)
 docs/, HACKATHON_SPEC.md the original design notes
   game/
     GameShell.tsx        HUD: role, layer switch, minimap, discovery panel, log

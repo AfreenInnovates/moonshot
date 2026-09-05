@@ -1,68 +1,77 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { isPuzzle, puzzleFor } from "../../game/puzzles";
 
-// Optional: if the user hasn't set the key, we can provide a fallback puzzle or let it fail gracefully.
+/**
+ * One scan puzzle. The client already has a playable local puzzle on screen
+ * before this is called, so this route only ever has to be *better* - and it
+ * has to be quick, because the client stops waiting after about a second and a
+ * half. Anything slow, missing or malformed falls straight back to the same
+ * bank the client drew from.
+ */
+
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
+const SYSTEM = `You write one very easy multiple-choice question for a heist game.
+A spectator is scanning an object in a room and has about 20 seconds to answer.
+
+Rules:
+- One sentence. Plain words. Aim it at a player who has never seen this room.
+- The question must be about the object named by the user, or a trivially easy
+  count/sequence (like 2, 4, 6, ?).
+- Exactly 3 options, 1-4 words each. The right answer must be obvious to anyone
+  who read the question.
+- Never rely on outside knowledge, wordplay or trick phrasing.
+
+Reply with JSON only:
+{"question": "...", "options": ["...", "...", "..."], "correct": 0, "hint": "one short line saying what the object is"}
+"correct" is the index of the right option and must vary between requests.`;
+
 export async function POST(req: Request) {
+  let itemId = "";
+  let itemLabel = "";
+  let roomName = "";
   try {
-    const { itemLabel, roomName } = await req.json();
+    const body = (await req.json()) as {
+      itemId?: string;
+      itemLabel?: string;
+      roomName?: string;
+    };
+    itemId = body.itemId ?? "";
+    itemLabel = body.itemLabel ?? "";
+    roomName = body.roomName ?? "";
+  } catch {
+    return NextResponse.json({ error: "invalid body" }, { status: 400 });
+  }
 
-    if (!itemLabel) {
-      return NextResponse.json({ error: "Missing itemLabel" }, { status: 400 });
-    }
+  if (!itemLabel && !itemId)
+    return NextResponse.json({ error: "Missing itemLabel" }, { status: 400 });
 
-    if (!openai) {
-      // Fallback puzzle if no API key is provided
-      return NextResponse.json({
-        question: `System offline. Quick manual override for: ${itemLabel}?`,
-        options: ["Bypass", "Reroute", "Short-circuit"],
-        correct: 0,
-      });
-    }
+  const local = puzzleFor(itemId || itemLabel);
+  if (!openai) return NextResponse.json(local);
 
+  try {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        {
-          role: "system",
-          content: `You are an AI generating very simple, 1st grade level riddles for a game.
-The player is trying to scan an item: "{itemLabel}" in room "{roomName}".
-Generate a very short, extremely easy 1-sentence riddle or trivia question related to scanning or bypassing this item.
-Provide exactly 3 short options (1-3 words each) for the answer. Make sure the correct answer is obvious.
-Return the result as a JSON object with this exact structure:
-{
-  "question": "The short riddle string",
-  "options": ["Option 1", "Option 2", "Option 3"],
-  "correct": 0 // The index of the correct option (0, 1, or 2)
-}
-Make the correct index random each time. Ensure the response is valid JSON.`,
-        },
+        { role: "system", content: SYSTEM },
         {
           role: "user",
-          content: `Generate a puzzle for item: ${itemLabel} in room: ${roomName}`,
+          content: `Object: ${itemLabel || itemId}. Room: ${roomName || "the facility"}.`,
         },
       ],
       response_format: { type: "json_object" },
       temperature: 0.7,
     });
 
-    const result = completion.choices[0].message.content;
-    if (!result) {
-      throw new Error("No content from OpenAI");
-    }
-
-    const data = JSON.parse(result);
-    return NextResponse.json(data);
+    const result = completion.choices[0]?.message?.content;
+    const data: unknown = result ? JSON.parse(result) : null;
+    // the model is an upgrade, never a source of a broken card
+    return NextResponse.json(isPuzzle(data) ? data : local);
   } catch (error) {
     console.error("Puzzle API error:", error);
-    // Fallback on error
-    return NextResponse.json({
-      question: "Connection scrambled. Which frequency stabilizes the scan?",
-      options: ["104.2 Hz", "88.9 Hz", "144.0 Hz"],
-      correct: 2,
-    });
+    return NextResponse.json(local);
   }
 }

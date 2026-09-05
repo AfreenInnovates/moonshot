@@ -64,7 +64,11 @@ function FirstPersonLook() {
  * The spectator camera rides along with the thief: whenever the thief moves
  * into another room the framing slides over to that room, so the map reveals
  * itself as the run goes on instead of being handed over all at once.
- * Dragging cancels the follow until the next room change.
+ *
+ * A posted spectator's framing is bolted down - no orbit, no pan. Their room is
+ * always drawn from the same angle, so "left" and "right" mean the same thing
+ * to them and to the thief every time they call one out. Solo play keeps the
+ * free camera, since there is nobody to give directions to.
  */
 function SpectatorRig({ active }: { active: boolean }) {
   const mode = useGame((s) => s.mode);
@@ -124,14 +128,19 @@ function SpectatorRig({ active }: { active: boolean }) {
         <OrbitControls
           ref={orbit}
           makeDefault
+          /* posted spectators get a fixed frame: zoom only, so the room never
+             turns under them and the thief's heading stays readable */
+          enableRotate={!posted}
           enablePan={!posted}
-           minDistance={posted ? 5 : 4}
-           maxDistance={posted ? 15 : 40}
-           maxPolarAngle={posted ? 1.3 : 1.52}
+          minDistance={posted ? 6 : 4}
+          maxDistance={posted ? 26 : 40}
+          maxPolarAngle={posted ? 1.3 : 1.52}
           enableDamping
           dampingFactor={0.08}
           onStart={() => {
-            following.current = false;
+            // a posted spectator can only dolly, and that must not cancel the
+            // slide back to their room's framing
+            if (!posted) following.current = false;
           }}
         />
       )}
