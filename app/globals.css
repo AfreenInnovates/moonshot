@@ -1,0 +1,178 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f2eee5;
+  --foreground: #111216;
+  --ink: #111216;
+  --paper: #f2eee5;
+  --paper-deep: #e4ded2;
+  --acid: #e9ff4f;
+  --cobalt: #3b63ff;
+  --signal: #24d17e;
+  --danger: #ff5b55;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #f2eee5;
+    --foreground: #111216;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: var(--acid);
+  color: var(--ink);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button,
+a,
+select,
+input {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.brutal-grid {
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(rgba(17, 18, 22, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(17, 18, 22, 0.055) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.brutal-panel {
+  border: 2px solid var(--ink);
+  background: rgba(242, 238, 229, 0.94);
+  box-shadow: 7px 7px 0 var(--ink);
+}
+
+.brutal-panel-dark {
+  border: 2px solid #f2eee5;
+  background: #111216;
+  box-shadow: 7px 7px 0 var(--acid);
+}
+
+.brutal-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--ink);
+  background: var(--acid);
+  color: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.brutal-button:hover {
+  background: #f3ff93;
+  transform: translate(-1px, -1px);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.brutal-button:active {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+.brutal-button-dark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #f2eee5;
+  background: transparent;
+  color: #f2eee5;
+  box-shadow: 4px 4px 0 var(--acid);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.brutal-button-dark:hover {
+  background: rgba(242, 238, 229, 0.12);
+  transform: translate(-1px, -1px);
+  box-shadow: 6px 6px 0 var(--acid);
+}
+
+.brutal-button-dark:active {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--acid);
+}
+
+.brutal-input {
+  border: 2px solid var(--ink);
+  background: #fffdf7;
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.brutal-input:focus {
+  outline: 3px solid var(--cobalt);
+  outline-offset: 2px;
+}
+
+.hud-panel {
+  border: 1px solid rgba(242, 238, 229, 0.2);
+  border-left: 3px solid rgba(233, 255, 79, 0.8);
+  background: rgba(7, 10, 15, 0.82);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
+}
+
+.hud-panel-blue {
+  border-left-color: rgba(139, 199, 255, 0.9);
+}
+
+.signal-pulse {
+  animation: signal-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes signal-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
