@@ -60,7 +60,6 @@ export default function Home() {
             </p>
             <div className="mt-9 flex flex-wrap gap-4">
               <Link href="/rooms" className="brutal-button px-5 py-3">Create a room <span className="ml-3 text-base">-&gt;</span></Link>
-              <Link href="/play" className="brutal-button-dark bg-[#111216] px-5 py-3">Try solo</Link>
             </div>
           </header>
 

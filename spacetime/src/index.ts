@@ -17,9 +17,24 @@
  * stays the source of truth.
  */
 
-import { schema, table, t } from 'spacetimedb/server';
+import { ScheduleAt, schema, table, t, type ReducerCtx } from 'spacetimedb/server';
 
 const WATCHABLE = ['lobby', 'sec', 'vault'] as const;
+const MIN_PLAYERS = 2;
+const SPECTATOR_REJOIN_MS = 20_000n;
+
+const spectatorGrace = table(
+  { public: true },
+  {
+    id: t.u64().autoInc().primaryKey(),
+    scheduled_at: t.scheduleAt(),
+    room_code: t.string(),
+    player_id: t.string(),
+    identity: t.string(),
+    connection_id: t.string(),
+    expires_at: t.u64(),
+  },
+);
 
 const spacetimedb = schema({
   game_room: table(
@@ -53,6 +68,9 @@ const spacetimedb = schema({
       /** the single room a spectator is posted to */
       watching: t.string(),
       joined_at: t.u64(),
+      connected: t.bool(),
+      rejoin_until: t.u64(),
+      connection_id: t.string(),
     }
   ),
 
@@ -111,6 +129,7 @@ const spacetimedb = schema({
       at: t.u64(),
     }
   ),
+  spectator_grace: spectatorGrace,
 });
 
 export default spacetimedb;
@@ -120,6 +139,63 @@ export default spacetimedb;
 /* -------------------------------------------------------------------------- */
 
 const nowMs = (ts: { toMillis(): bigint }) => ts.toMillis();
+type HeistContext = ReducerCtx<typeof spacetimedb.schemaType>;
+
+function endRoom(ctx: HeistContext, code: string, result: string, text: string) {
+  const room = ctx.db.game_room.code.find(code);
+  if (!room || room.phase === 'ended') return;
+
+  const thiefState = ctx.db.thief_state.room_code.find(code);
+  if (thiefState) ctx.db.thief_state.room_code.delete(code);
+  for (const item of ctx.db.discovered_item.iter()) {
+    if (item.room_code === code) ctx.db.discovered_item.id.delete(item.id);
+  }
+  for (const grace of ctx.db.spectator_grace.iter()) {
+    if (grace.room_code === code) ctx.db.spectator_grace.id.delete(grace.id);
+  }
+
+  const at = nowMs(ctx.timestamp);
+  ctx.db.game_room.code.update({ ...room, phase: 'ended', starts_at: 0n, result });
+  ctx.db.game_event.insert({
+    id: 0n,
+    room_code: code,
+    tone: 'bad',
+    text,
+    at,
+  });
+}
+
+function startSpectatorGrace(
+  ctx: HeistContext,
+  code: string,
+  playerId: string,
+  connectionId: string,
+  at: bigint,
+) {
+  const room = ctx.db.game_room.code.find(code);
+  const player = ctx.db.player.id.find(playerId);
+  if (!room || room.phase !== 'playing' || !player || player.role !== 'spectator') return;
+
+  const expiresAt = at + SPECTATOR_REJOIN_MS;
+  for (const grace of ctx.db.spectator_grace.iter()) {
+    if (grace.player_id === player.id) ctx.db.spectator_grace.id.delete(grace.id);
+  }
+  ctx.db.player.id.update({
+    ...player,
+    connected: false,
+    rejoin_until: expiresAt,
+    connection_id: connectionId,
+  });
+  ctx.db.spectator_grace.insert({
+    id: 0n,
+    scheduled_at: ScheduleAt.time(expiresAt * 1_000n),
+    room_code: room.code,
+    player_id: player.id,
+    identity: player.identity,
+    connection_id: connectionId,
+    expires_at: expiresAt,
+  });
+}
 
 /** Same deterministic PRNG the web client uses, so both agree on the draw. */
 function mulberry32(seed: number) {
@@ -162,6 +238,9 @@ export const create_room = spacetimedb.reducer(
       role: '',
       watching: '',
       joined_at: at,
+      connected: true,
+      rejoin_until: 0n,
+      connection_id: ctx.connectionId?.toHexString() ?? '',
     });
   }
 );
@@ -171,16 +250,27 @@ export const join_room = spacetimedb.reducer(
   (ctx, { code, name }) => {
     const room = ctx.db.game_room.code.find(code);
     if (!room) throw new Error('no such room');
-    if (room.phase === 'ended') throw new Error('that run is over');
 
     const identity = ctx.sender.toHexString();
     const id = `${code}:${identity}`;
     const existing = ctx.db.player.id.find(id);
     if (existing) {
+      if (room.phase === 'ended') throw new Error('that run is over');
+      for (const grace of ctx.db.spectator_grace.iter()) {
+        if (grace.player_id === id) ctx.db.spectator_grace.id.delete(grace.id);
+      }
       // reconnecting - keep whatever role they already hold
-      ctx.db.player.id.update({ ...existing, name });
+      ctx.db.player.id.update({
+        ...existing,
+        name,
+        connected: true,
+        rejoin_until: 0n,
+        connection_id: ctx.connectionId?.toHexString() ?? existing.connection_id,
+      });
       return;
     }
+
+    if (room.phase !== 'lobby') throw new Error('that run has already started');
 
     let seats = 0;
     for (const p of ctx.db.player.iter()) if (p.room_code === code) seats++;
@@ -195,15 +285,21 @@ export const join_room = spacetimedb.reducer(
       role: '',
       watching: '',
       joined_at: at,
+      connected: true,
+      rejoin_until: 0n,
+      connection_id: ctx.connectionId?.toHexString() ?? '',
     });
 
     // second player through the door starts the ten second clock
     if (room.phase === 'lobby' && seats + 1 >= 2) {
       ctx.db.game_room.code.update({
         ...room,
+        host: room.host || identity,
         phase: 'countdown',
         starts_at: at + 10_000n,
       });
+    } else if (!room.host) {
+      ctx.db.game_room.code.update({ ...room, host: identity });
     }
   }
 );
@@ -211,8 +307,122 @@ export const join_room = spacetimedb.reducer(
 export const leave_room = spacetimedb.reducer(
   { code: t.string() },
   (ctx, { code }) => {
-    ctx.db.player.id.delete(`${code}:${ctx.sender.toHexString()}`);
+    const identity = ctx.sender.toHexString();
+    const id = `${code}:${identity}`;
+    const player = ctx.db.player.id.find(id);
+    if (!player) return;
+
+    const room = ctx.db.game_room.code.find(code);
+    if (!room) {
+      ctx.db.player.id.delete(id);
+      return;
+    }
+
+    for (const grace of ctx.db.spectator_grace.iter()) {
+      if (grace.player_id === id) ctx.db.spectator_grace.id.delete(grace.id);
+    }
+
+    if (player.role === 'thief' && room.phase === 'playing') {
+      ctx.db.player.id.delete(id);
+      endRoom(ctx, code, 'thief-left', 'THE THIEF LEFT. THIS GAME IS OVER.');
+      return;
+    }
+
+    if (player.role === 'spectator' && room.phase === 'playing') {
+      startSpectatorGrace(
+        ctx,
+        code,
+        id,
+        ctx.connectionId?.toHexString() ?? player.connection_id,
+        nowMs(ctx.timestamp),
+      );
+      return;
+    }
+
+    ctx.db.player.id.delete(id);
+
+    const remaining = [...ctx.db.player.iter()].filter((p) => p.room_code === code);
+    let host = room.host;
+    if (room.host === identity || !remaining.some((p) => p.identity === host)) {
+      const nextHost = remaining.reduce<typeof remaining[number] | null>(
+        (candidate, current) =>
+          !candidate ||
+          current.joined_at < candidate.joined_at ||
+          (current.joined_at === candidate.joined_at && current.id < candidate.id)
+            ? current
+            : candidate,
+        null,
+      );
+      host = nextHost?.identity ?? '';
+    }
+
+    const waitingAgain = room.phase === 'countdown' && remaining.length < MIN_PLAYERS;
+    ctx.db.game_room.code.update({
+      ...room,
+      host,
+      phase: waitingAgain ? 'lobby' : room.phase,
+      starts_at: waitingAgain ? 0n : room.starts_at,
+    });
   }
+);
+
+/**
+ * A live connection is authoritative presence. Spectators keep their role and
+ * seat for one scheduled grace window; a disconnected thief ends the run.
+ */
+export const on_disconnect = spacetimedb.clientDisconnected((ctx) => {
+  const connectionId = ctx.connectionId?.toHexString();
+  if (!connectionId) return;
+
+  const at = nowMs(ctx.timestamp);
+  for (const player of ctx.db.player.iter()) {
+    if (player.connection_id !== connectionId || !player.connected) continue;
+    const room = ctx.db.game_room.code.find(player.room_code);
+    if (!room || room.phase === 'ended') continue;
+
+    if (player.role === 'thief' && room.phase === 'playing') {
+      ctx.db.player.id.update({ ...player, connected: false });
+      endRoom(ctx, room.code, 'thief-left', 'THE THIEF LEFT. THIS GAME IS OVER.');
+      continue;
+    }
+
+    if (player.role !== 'spectator' || room.phase !== 'playing') continue;
+
+    startSpectatorGrace(ctx, room.code, player.id, connectionId, at);
+  }
+});
+
+/** Server-side expiry for a spectator that did not reconnect in time. */
+export const expire_spectator = spacetimedb.reducer(
+  { onSchedule: spectatorGrace },
+  { grace: spectatorGrace.rowType },
+  (ctx, { grace }) => {
+    const scheduled = ctx.db.spectator_grace.id.find(grace.id);
+    if (!scheduled) return;
+    ctx.db.spectator_grace.id.delete(grace.id);
+
+    const room = ctx.db.game_room.code.find(grace.room_code);
+    const player = ctx.db.player.id.find(grace.player_id);
+    if (
+      !room ||
+      !player ||
+      player.identity !== grace.identity ||
+      player.connection_id !== grace.connection_id ||
+      player.connected ||
+      player.rejoin_until !== grace.expires_at
+    )
+      return;
+
+    ctx.db.player.id.delete(player.id);
+    if (room.phase === 'playing') {
+      endRoom(
+        ctx,
+        room.code,
+        'spectator-left',
+        'SPECTATOR DID NOT RETURN. START A NEW GAME.',
+      );
+    }
+  },
 );
 
 /** Host can cut the wait short. */
@@ -223,6 +433,12 @@ export const start_run = spacetimedb.reducer(
     if (!room) throw new Error('no such room');
     if (room.host !== ctx.sender.toHexString())
       throw new Error('only the host can start');
+    if (room.phase !== 'lobby') throw new Error('run already started');
+
+    let players = 0;
+    for (const p of ctx.db.player.iter()) if (p.room_code === code) players++;
+    if (players < MIN_PLAYERS) throw new Error('at least two players are required');
+
     ctx.db.game_room.code.update({
       ...room,
       phase: 'countdown',
@@ -314,10 +530,14 @@ export const publish_world = spacetimedb.reducer(
     extra: t.string(),
   },
   (ctx, args) => {
+    const room = ctx.db.game_room.code.find(args.code);
+    if (!room || room.phase !== 'playing') throw new Error('run is not active');
+
     const me = ctx.db.player.id.find(
       `${args.code}:${ctx.sender.toHexString()}`
     );
-    if (!me || me.role !== 'thief') throw new Error('only the thief publishes');
+    if (!me || me.role !== 'thief' || !me.connected)
+      throw new Error('only the connected thief publishes');
 
     const row = {
       room_code: args.code,
@@ -351,8 +571,10 @@ export const discover_item = spacetimedb.reducer(
   { code: t.string(), item_id: t.string() },
   (ctx, { code, item_id }) => {
     const identity = ctx.sender.toHexString();
+    const room = ctx.db.game_room.code.find(code);
     const me = ctx.db.player.id.find(`${code}:${identity}`);
-    if (!me) throw new Error('not in this room');
+    if (!room || room.phase !== 'playing' || !me || !me.connected)
+      throw new Error('not in an active room');
 
     const id = `${code}:${item_id}`;
     if (ctx.db.discovered_item.id.find(id)) return;
@@ -378,6 +600,17 @@ export const discover_item = spacetimedb.reducer(
 export const log_event = spacetimedb.reducer(
   { code: t.string(), tone: t.string(), text: t.string() },
   (ctx, { code, tone, text }) => {
+    const room = ctx.db.game_room.code.find(code);
+    const me = ctx.db.player.id.find(`${code}:${ctx.sender.toHexString()}`);
+    if (
+      !room ||
+      room.phase !== 'playing' ||
+      !me ||
+      me.role !== 'spectator' ||
+      !me.connected ||
+      (!tone.startsWith('command:') && tone !== 'voice')
+    )
+      throw new Error('only an active spectator can command');
     ctx.db.game_event.insert({
       id: 0n,
       room_code: code,
@@ -392,7 +625,7 @@ export const end_run = spacetimedb.reducer(
   { code: t.string(), result: t.string() },
   (ctx, { code, result }) => {
     const room = ctx.db.game_room.code.find(code);
-    if (!room) return;
+    if (!room || room.phase === 'ended') return;
     ctx.db.game_room.code.update({ ...room, phase: 'ended', result });
     ctx.db.game_event.insert({
       id: 0n,

@@ -6,9 +6,12 @@ import type {
   NetMessage,
   PlayerInfo,
   RoomState,
+  StartFailure,
+  StartResult,
 } from "./types";
 
 const API = "/api/rooms";
+const VOICE_API = "/api/voice";
 
 /**
  * Rooms live in the Next server, clients hold one server-sent-events stream
@@ -20,6 +23,7 @@ export class ServerNet implements NetClient {
   private es: EventSource | null = null;
   private listeners = new Set<(m: NetMessage) => void>();
   private code = "";
+  private playerId = "";
 
   async connect(code: string) {
     this.code = code;
@@ -49,14 +53,32 @@ export class ServerNet implements NetClient {
     this.es = null;
   }
 
-  disconnect() {
+  disconnect(intentional = false) {
+    if (!intentional && this.code && this.playerId) {
+      const body = {
+        action: "disconnect",
+        code: this.code,
+        playerId: this.playerId,
+      };
+      try {
+        const sent = navigator.sendBeacon?.(
+          API,
+          new Blob([JSON.stringify(body)], { type: "application/json" }),
+        );
+        if (!sent) void this.post(body);
+      } catch {
+        void this.post(body);
+      }
+    }
     this.disconnectStream();
     this.listeners.clear();
+    this.code = "";
+    this.playerId = "";
   }
 
-  private async post<T>(body: unknown): Promise<T | null> {
+  private async post<T>(body: unknown, endpoint = API): Promise<T | null> {
     try {
-      const res = await fetch(API, {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -78,6 +100,7 @@ export class ServerNet implements NetClient {
   }
 
   async join(code: string, player: PlayerInfo) {
+    this.playerId = player.id;
     const res = await this.post<{ room?: RoomState; error?: JoinFailure }>({
       action: "join",
       code,
@@ -90,22 +113,37 @@ export class ServerNet implements NetClient {
   leave(code: string, playerId: string) {
     // keepalive so the request still goes out while the tab is closing
     try {
-      navigator.sendBeacon?.(
+      const sent = navigator.sendBeacon?.(
         API,
         new Blob([JSON.stringify({ action: "leave", code, playerId })], {
           type: "application/json",
         }),
       );
+      if (sent) return;
     } catch {
-      void this.post({ action: "leave", code, playerId });
+      // Fall through to fetch when Beacon is unavailable.
     }
+    void this.post({ action: "leave", code, playerId });
   }
 
-  start(code: string) {
-    void this.post({ action: "start", code });
+  async start(code: string, playerId: string): Promise<StartResult> {
+    const res = await this.post<{ ok?: boolean; error?: StartFailure }>({
+      action: "start",
+      code,
+      playerId,
+    });
+    if (res?.ok) return { ok: true };
+    return { ok: false, error: res?.error ?? "notfound" };
   }
 
   send(msg: NetMessage) {
+    if (msg.type === "command") {
+      void this.post(
+        { action: "command", code: this.code, playerId: this.playerId, command: msg.command },
+        VOICE_API,
+      );
+      return;
+    }
     void this.post({ action: "msg", code: this.code, msg });
   }
 

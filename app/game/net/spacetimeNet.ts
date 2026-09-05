@@ -12,6 +12,8 @@ import type {
   PlayerInfo,
   RoomState,
   Snapshot,
+  StartResult,
+  VoiceTransmission,
 } from "./types";
 import { WATCHABLE } from "./types";
 
@@ -35,12 +37,50 @@ const phase = (value: string): Phase =>
 
 const joinFailure = (error: unknown): JoinFailure => {
   const message = error instanceof Error ? error.message : String(error);
-  return message.toLowerCase().includes("full") ? "full" : "notfound";
+  const lower = message.toLowerCase();
+  if (lower.includes("full")) return "full";
+  if (lower.includes("started") || lower.includes("over") || lower.includes("countdown"))
+    return "unavailable";
+  return "notfound";
+};
+
+const startFailure = (error: unknown): StartResult => {
+  const message = error instanceof Error ? error.message : String(error);
+  const lower = message.toLowerCase();
+  if (lower.includes("only the host")) return { ok: false, error: "not-host" };
+  if (lower.includes("at least") || lower.includes("minimum"))
+    return { ok: false, error: "not-ready" };
+  if (lower.includes("started") || lower.includes("countdown") || lower.includes("phase"))
+    return { ok: false, error: "started" };
+  return { ok: false, error: "notfound" };
 };
 
 const commandFromTone = (tone: string): CommandCode | null => {
   const value = tone.startsWith("command:") ? tone.slice("command:".length) : "";
   return COMMAND_CODES.includes(value as CommandCode) ? (value as CommandCode) : null;
+};
+
+const voiceFromEvent = (text: string): VoiceTransmission | null => {
+  try {
+    const value = JSON.parse(text) as Partial<VoiceTransmission>;
+    if (
+      typeof value.id !== "string" ||
+      typeof value.by !== "string" ||
+      typeof value.audioUrl !== "string" ||
+      typeof value.t !== "number" ||
+      !COMMAND_CODES.includes(value.command as CommandCode)
+    )
+      return null;
+    return {
+      id: value.id,
+      command: value.command as CommandCode,
+      by: value.by,
+      audioUrl: value.audioUrl,
+      t: value.t,
+    };
+  } catch {
+    return null;
+  }
 };
 
 /** SpacetimeDB transport used by the deployed application. */
@@ -63,6 +103,13 @@ export class SpacetimeNet implements NetClient {
 
     const host = process.env.NEXT_PUBLIC_SPACETIME_HOST || "wss://maincloud.spacetimedb.com";
     const database = process.env.NEXT_PUBLIC_SPACETIME_MODULE_NAME || "one-heist-spacetime";
+    const tokenKey = `heist:spacetime-token:${host}:${database}`;
+    let token = "";
+    try {
+      token = localStorage.getItem(tokenKey) ?? "";
+    } catch {
+      /* anonymous identity can still connect without persistence */
+    }
 
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -76,10 +123,15 @@ export class SpacetimeNet implements NetClient {
       const conn = DbConnection.builder()
         .withUri(host)
         .withDatabaseName(database)
-        .withToken("")
-        .onConnect((connectedConn, identity) => {
+        .withToken(token)
+        .onConnect((connectedConn, identity, nextToken) => {
           void connectedConn;
           this.identity = identity.toHexString();
+          try {
+            localStorage.setItem(tokenKey, nextToken);
+          } catch {
+            /* private browsing can still use this live connection */
+          }
           finish();
         })
         .onConnectError((context, error) => {
@@ -135,6 +187,11 @@ export class SpacetimeNet implements NetClient {
       conn.db.gameEvent.onInsert((ctx, row) => {
         void ctx;
         if (row.roomCode !== this.code) return;
+        if (row.tone === "voice") {
+          const voice = voiceFromEvent(row.text);
+          if (voice) for (const cb of this.listeners) cb({ type: "voice", ...voice });
+          return;
+        }
         const command = commandFromTone(row.tone);
         if (!command) return;
         const by = row.text.startsWith("command:") ? row.text.slice("command:".length) : `${this.code}:?`;
@@ -207,18 +264,26 @@ export class SpacetimeNet implements NetClient {
         role: p.role === "thief" || p.role === "spectator" ? p.role : null,
         watching: roomId(p.watching),
         joinedAt: Number(p.joinedAt),
+        connected: p.connected,
+        rejoinUntil: Number(p.rejoinUntil),
       });
     }
     const state: RoomState = {
       code: r.code,
-      hostId: `${this.code}:${r.host}`,
+       hostId: r.host ? `${this.code}:${r.host}` : "",
       maxPlayers: r.maxPlayers,
       phase: phase(r.phase),
       startsAt: Number(r.startsAt) || null,
       players,
       createdAt: Number(r.createdAt),
       seed: r.seed,
-      result: r.result === "escaped" || r.result === "down" ? r.result : null,
+       result:
+         r.result === "escaped" ||
+         r.result === "down" ||
+         r.result === "thief-left" ||
+         r.result === "spectator-left"
+           ? r.result
+           : null,
     };
     this.room = state;
     this.scheduleRoleDraw(state);
@@ -239,7 +304,7 @@ export class SpacetimeNet implements NetClient {
     for (const item of db.discoveredItem.iter()) if (item.roomCode === this.code) items.push(item.itemId);
     const log: Snapshot["log"] = [];
     for (const ev of db.gameEvent.iter()) {
-      if (ev.roomCode !== this.code || commandFromTone(ev.tone)) continue;
+      if (ev.roomCode !== this.code || commandFromTone(ev.tone) || ev.tone === "voice") continue;
       log.push({
         id: Number(ev.id),
         text: ev.text,
@@ -316,11 +381,18 @@ export class SpacetimeNet implements NetClient {
   }
 
   leave(code: string): void {
-    if (this.conn) this.conn.reducers.leaveRoom({ code });
+    if (this.conn) void this.conn.reducers.leaveRoom({ code }).catch(() => {});
   }
 
-  start(code: string): void {
-    if (this.conn) this.conn.reducers.startRun({ code });
+  async start(code: string, playerId: string): Promise<StartResult> {
+    void playerId;
+    if (!this.conn) return { ok: false, error: "notfound" };
+    try {
+      await this.conn.reducers.startRun({ code });
+      return { ok: true };
+    } catch (error) {
+      return startFailure(error);
+    }
   }
 
   send(msg: NetMessage): void {
@@ -355,13 +427,47 @@ export class SpacetimeNet implements NetClient {
     } else if (msg.type === "discover") {
       void this.conn.reducers.discoverItem({ code: this.code, itemId: msg.itemId });
     } else if (msg.type === "command") {
-      // log_event already exists in the deployed module. A reserved tone keeps
-      // commands realtime without requiring a production schema migration.
-      void this.conn.reducers.logEvent({
-        code: this.code,
+      void this.sendSpacetimeCommand(msg);
+    }
+  }
+
+  private async sendSpacetimeCommand(msg: Extract<NetMessage, { type: "command" }>) {
+    const conn = this.conn;
+    const code = this.code;
+    if (!conn) return;
+
+    try {
+      await conn.reducers.logEvent({
+        code,
         tone: `command:${msg.command}`,
         text: `command:${msg.by}`,
       });
+    } catch {
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/voice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "synthesize", command: msg.command }),
+      });
+      if (!response.ok || this.conn !== conn) return;
+      const result = (await response.json()) as { audioUrl?: string };
+      if (!result.audioUrl) return;
+      await conn.reducers.logEvent({
+        code,
+        tone: "voice",
+        text: JSON.stringify({
+          id: `${code}:${crypto.randomUUID()}`,
+          command: msg.command,
+          by: msg.by,
+          audioUrl: result.audioUrl,
+          t: Date.now(),
+        }),
+      });
+    } catch {
+      // Visual commands remain usable when the voice service is unavailable.
     }
   }
 

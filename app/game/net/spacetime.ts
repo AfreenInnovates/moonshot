@@ -59,6 +59,18 @@ const playerRow = __t.row({
   role: __t.string(),
   watching: __t.string(),
   joinedAt: __t.u64().name("joined_at"),
+  connected: __t.bool(),
+  rejoinUntil: __t.u64().name("rejoin_until"),
+  connectionId: __t.string().name("connection_id"),
+});
+const spectatorGraceRow = __t.row({
+  id: __t.u64().primaryKey(),
+  scheduledAt: __t.scheduleAt().name("scheduled_at"),
+  roomCode: __t.string().name("room_code"),
+  playerId: __t.string().name("player_id"),
+  identity: __t.string(),
+  connectionId: __t.string().name("connection_id"),
+  expiresAt: __t.u64().name("expires_at"),
 });
 const thiefStateRow = __t.row({
   roomCode: __t.string().primaryKey(),
@@ -113,6 +125,8 @@ const publishWorldReducer = {
   extra: __t.string(),
 };
 const startRunReducer = { code: __t.string() };
+const onDisconnectReducer = {};
+const expireSpectatorReducer = { grace: spectatorGraceRow };
 
 const tablesSchema = __schema({
   discoveredItem: __table(
@@ -147,6 +161,14 @@ const tablesSchema = __schema({
     },
     playerRow,
   ),
+  spectatorGrace: __table(
+    {
+      name: "spectator_grace",
+      indexes: [{ accessor: "id", name: "spectator_grace_id_idx_btree", algorithm: "btree", columns: ["id"] }],
+      constraints: [{ name: "spectator_grace_id_key", constraint: "unique", columns: ["id"] }],
+    },
+    spectatorGraceRow,
+  ),
   thiefState: __table(
     {
       name: "thief_state",
@@ -167,6 +189,8 @@ const reducersSchema = __reducers(
   __reducerSchema("log_event", logEventReducer),
   __reducerSchema("publish_world", publishWorldReducer),
   __reducerSchema("start_run", startRunReducer),
+  __reducerSchema("on_disconnect", onDisconnectReducer),
+  __reducerSchema("expire_spectator", expireSpectatorReducer),
 );
 const proceduresSchema = __procedures();
 
@@ -176,6 +200,7 @@ type SchemaWithAliases = Omit<typeof tablesSchema.schemaType, "tables"> & {
     readonly game_event: typeof tablesSchema.schemaType.tables.gameEvent;
     readonly game_room: typeof tablesSchema.schemaType.tables.gameRoom;
     readonly thief_state: typeof tablesSchema.schemaType.tables.thiefState;
+    readonly spectator_grace: typeof tablesSchema.schemaType.tables.spectatorGrace;
   };
 };
 
@@ -195,6 +220,7 @@ const tableAccessorAliases = {
   game_event: "gameEvent",
   game_room: "gameRoom",
   thief_state: "thiefState",
+  spectator_grace: "spectatorGrace",
 } as const;
 
 function withAliases<T extends object>(target: T): T {

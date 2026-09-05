@@ -14,9 +14,9 @@ import type { NetClient } from "./types";
  *   bindings are generated. Same six methods, one reducer each.
  */
 export function createNet(): NetClient {
-  return process.env.NEXT_PUBLIC_NET_TRANSPORT === "server"
-    ? new ServerNet()
-    : new SpacetimeNet();
+  return process.env.NEXT_PUBLIC_NET_TRANSPORT === "spacetime"
+    ? new SpacetimeNet()
+    : new ServerNet();
 }
 
 export * from "./types";

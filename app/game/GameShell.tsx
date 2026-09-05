@@ -1,13 +1,16 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { COMMANDS, commandByCode, type CommandCode } from "./commands";
 import Minimap from "./components/Minimap";
-import { playSignal } from "./audio";
+import { clearVoiceQueue, enqueueVoice, playNarrationOnce, playSignal } from "./audio";
 import { CAMERAS, MARKERS, roomById } from "./level";
 import { useSession } from "./session";
 import { useGame, VIEWS, type ViewMode } from "./store";
+import mascot from "../../ChatGPT Image Sep 6, 2026, 12_03_22 AM.png";
 
 const GameCanvas = dynamic(() => import("./GameCanvas"), {
   ssr: false,
@@ -19,6 +22,14 @@ const GameCanvas = dynamic(() => import("./GameCanvas"), {
 });
 
 const HIDDEN = [...CAMERAS, ...MARKERS].filter((m) => m.reveal === "discovery");
+const noSubscribe = () => () => {};
+const readOnboardingCompletion = () => {
+  try {
+    return localStorage.getItem("heist:onboarding:v1") === "complete";
+  } catch {
+    return false;
+  }
+};
 
 function Bar({
   label,
@@ -210,6 +221,7 @@ function DangerBanner() {
 function CommandDeck() {
   const sendCommand = useSession((s) => s.sendCommand);
   const [sent, setSent] = useState<CommandCode | null>(null);
+  const lastSent = useRef<{ code: CommandCode; at: number } | null>(null);
 
   return (
     <div className="hud-panel w-[min(38rem,calc(100vw-1.5rem))] border-l-[#e9ff4f] p-2">
@@ -224,6 +236,9 @@ function CommandDeck() {
           <button
             key={command.code}
             onClick={() => {
+              const now = Date.now();
+              if (lastSent.current?.code === command.code && now - lastSent.current.at < 350) return;
+              lastSent.current = { code: command.code, at: now };
               sendCommand(command.code);
               playSignal("command");
               setSent(command.code);
@@ -340,6 +355,101 @@ function EndCard({ onReset }: { onReset?: () => void }) {
   );
 }
 
+const ONBOARDING_KEY = "heist:onboarding:v1";
+const INTRO_AUDIO_URL = "/api/voice?kind=intro";
+
+function Onboarding() {
+  const mode = useGame((s) => s.mode);
+  const completed = useSyncExternalStore(
+    noSubscribe,
+    readOnboardingCompletion,
+    () => true,
+  );
+  const [dismissed, setDismissed] = useState(false);
+  const open = !completed && !dismissed;
+
+  useEffect(() => {
+    if (open) playNarrationOnce("blind-run-intro", INTRO_AUDIO_URL);
+  }, [open]);
+
+  if (!open) return null;
+
+  const finish = () => {
+    playNarrationOnce("blind-run-intro", INTRO_AUDIO_URL);
+    try {
+      localStorage.setItem(ONBOARDING_KEY, "complete");
+    } catch {
+      /* private browsing can still dismiss the guide for this session */
+    }
+    setDismissed(true);
+  };
+
+  return (
+    <div className="pointer-events-auto absolute inset-0 z-30 grid place-items-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-title"
+        className="w-full max-w-xl border-2 border-[#e9ff4f] bg-[#111216] p-5 text-zinc-100 shadow-[7px_7px_0_#e9ff4f] sm:p-7"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-white/20 pb-4">
+          <div className="flex items-center gap-3">
+            <Image
+              src={mascot}
+              alt="Blind Run mascot"
+              width={84}
+              height={84}
+              priority
+              className="h-16 w-16 object-contain"
+            />
+            <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e9ff4f]">
+              Blind Run / first briefing
+            </div>
+            <h2 id="onboarding-title" className="mt-2 text-2xl font-black uppercase tracking-[-0.04em]">
+              {mode.kind === "spectator" ? "Keep the thief alive" : "Get in and get out"}
+            </h2>
+            </div>
+          </div>
+          <button
+            onClick={finish}
+            className="border border-white/30 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-zinc-300 hover:bg-white/10"
+          >
+            Skip
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-4 text-sm leading-relaxed text-zinc-300 sm:grid-cols-2">
+          <div className="border-l-2 border-[#3b63ff] pl-3">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-[#4aa8ff]">Objective</h3>
+            <p className="mt-2">The thief must reach the vault, take the loot, and escape back through the entrance.</p>
+          </div>
+          <div className="border-l-2 border-[#39ff88] pl-3">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-[#39ff88]">Core mechanic</h3>
+            <p className="mt-2">The thief cannot see security. Spectators see one room each and relay danger through short commands.</p>
+          </div>
+          <div className="border-l-2 border-[#ffd23b] pl-3">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-[#ffd23b]">Controls</h3>
+            <p className="mt-2">
+              {mode.kind === "spectator"
+                ? "Drag to orbit, scroll to zoom, and use Watch / Discover to inspect your room."
+                : "WASD moves, Shift runs, E interacts, and click captures the mouse for looking around."}
+            </p>
+          </div>
+          <div className="border-l-2 border-[#ff6b73] pl-3">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-[#ff6b73]">Survive / win</h3>
+            <p className="mt-2">Avoid guards and cameras, manage health and alarm, find the keycard and code, then get out alive.</p>
+          </div>
+        </div>
+
+        <button onClick={finish} className="brutal-button mt-6 w-full px-4 py-3">
+          Understood - enter the run
+        </button>
+      </section>
+    </div>
+  );
+}
+
 export default function GameShell({ title }: { title?: string }) {
   const mode = useGame((s) => s.mode);
   const view = useGame((s) => s.view);
@@ -358,7 +468,10 @@ export default function GameShell({ title }: { title?: string }) {
   const explored = useGame((s) => s.explored);
   const gotLoot = useGame((s) => !!s.collected["vault-loot"]);
   const reset = useGame((s) => s.reset);
+  const leave = useSession((s) => s.leave);
   const onCommand = useSession((s) => s.onCommand);
+  const onVoice = useSession((s) => s.onVoice);
+  const router = useRouter();
 
   const solo = mode.kind === "solo";
   const spectator = mode.kind === "spectator";
@@ -378,6 +491,25 @@ export default function GameShell({ title }: { title?: string }) {
     if (mode.kind !== "thief") return;
     return onCommand((code, by) => useGame.getState().receiveCommand(code, by));
   }, [mode.kind, onCommand]);
+
+  useEffect(() => {
+    if (mode.kind !== "thief") {
+      clearVoiceQueue();
+      return;
+    }
+    const valid = () => {
+      const session = useSession.getState();
+      const player = session.room?.players.find((candidate) => candidate.id === session.myId);
+      return session.room?.phase === "playing" && player?.role === "thief";
+    };
+    const unsubscribe = onVoice((voice) => {
+      if (valid()) enqueueVoice(voice.id, voice.audioUrl, valid);
+    });
+    return () => {
+      unsubscribe();
+      clearVoiceQueue();
+    };
+  }, [mode.kind, onVoice]);
 
   const objective = gotLoot
     ? "Get back out through the entrance."
@@ -456,6 +588,17 @@ export default function GameShell({ title }: { title?: string }) {
                 className="border-2 border-white/30 bg-zinc-950/90 px-3 py-2 text-[10px] uppercase tracking-widest text-zinc-300 hover:bg-white/10"
               >
                 Reset
+              </button>
+            )}
+            {!solo && (
+              <button
+                onClick={() => {
+                  leave();
+                  router.push("/rooms");
+                }}
+                className="border-2 border-white/30 bg-zinc-950/90 px-3 py-2 text-[10px] uppercase tracking-widest text-zinc-300 hover:bg-white/10"
+              >
+                Leave room
               </button>
             )}
           </div>
@@ -567,6 +710,7 @@ export default function GameShell({ title }: { title?: string }) {
         </div>
       )}
 
+      <Onboarding />
       <EndCard />
     </div>
   );

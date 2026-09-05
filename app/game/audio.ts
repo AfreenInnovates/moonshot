@@ -36,3 +36,67 @@ export function playSignal(signal: Signal) {
     oscillator.stop(now + index * duration * 0.8 + duration + 0.02);
   });
 }
+
+type VoiceJob = {
+  id: string;
+  url: string;
+  valid: () => boolean;
+};
+
+const voiceQueue: VoiceJob[] = [];
+const playedVoice = new Set<string>();
+let activeVoice: HTMLAudioElement | null = null;
+
+function playNextVoice() {
+  if (activeVoice || voiceQueue.length === 0) return;
+  const job = voiceQueue.shift()!;
+  if (!job.valid()) {
+    playNextVoice();
+    return;
+  }
+
+  const audio = new Audio(job.url);
+  activeVoice = audio;
+  const finish = () => {
+    if (activeVoice !== audio) return;
+    activeVoice = null;
+    audio.onended = null;
+    audio.onerror = null;
+    playNextVoice();
+  };
+  audio.onended = finish;
+  audio.onerror = finish;
+  void audio.play().catch(finish);
+}
+
+/** Play a room command once, in order, while the thief is still active. */
+export function enqueueVoice(id: string, url: string, valid: () => boolean) {
+  if (typeof window === "undefined" || playedVoice.has(id)) return;
+  playedVoice.add(id);
+  voiceQueue.push({ id, url, valid });
+  playNextVoice();
+}
+
+export function clearVoiceQueue() {
+  voiceQueue.length = 0;
+  if (!activeVoice) return;
+  activeVoice.pause();
+  activeVoice.src = "";
+  activeVoice = null;
+}
+
+let narrationKey: string | null = null;
+let narrationAudio: HTMLAudioElement | null = null;
+
+/** Autoplay when allowed; retry the same one-shot audio from the existing UI click. */
+export function playNarrationOnce(key: string, url: string) {
+  if (typeof window === "undefined") return;
+  if (narrationKey === key && narrationAudio) {
+    if (narrationAudio.paused && !narrationAudio.ended) void narrationAudio.play().catch(() => {});
+    return;
+  }
+  narrationKey = key;
+  narrationAudio = new Audio(url);
+  narrationAudio.preload = "auto";
+  void narrationAudio.play().catch(() => {});
+}
