@@ -59,6 +59,10 @@ const gameRoomRow = __t.row({
   result: __t.string(),
   createdAt: __t.u64().name("created_at"),
 });
+const landingVisitRow = __t.row({
+  identity: __t.string().primaryKey(),
+  visitedAt: __t.u64().name("visited_at"),
+});
 // the published module tracks seats only; the connection bookkeeping in
 // spacetime/src/index.ts is newer than what is deployed
 const playerRow = __t.row({
@@ -69,6 +73,18 @@ const playerRow = __t.row({
   role: __t.string(),
   watching: __t.string(),
   joinedAt: __t.u64().name("joined_at"),
+  connected: __t.bool(),
+  rejoinUntil: __t.u64().name("rejoin_until"),
+  connectionId: __t.string().name("connection_id"),
+});
+const spectatorGraceRow = __t.row({
+  id: __t.u64().primaryKey(),
+  scheduledAt: __t.scheduleAt().name("scheduled_at"),
+  roomCode: __t.string().name("room_code"),
+  playerId: __t.string().name("player_id"),
+  identity: __t.string(),
+  connectionId: __t.string().name("connection_id"),
+  expiresAt: __t.u64().name("expires_at"),
 });
 const thiefStateRow = __t.row({
   roomCode: __t.string().primaryKey(),
@@ -90,17 +106,23 @@ const thiefStateRow = __t.row({
   extra: __t.string(),
   updatedAt: __t.u64().name("updated_at"),
 });
+const userProfileRow = __t.row({
+  identity: __t.string().primaryKey(),
+  name: __t.string(),
+  picture: __t.string(),
+  createdAt: __t.u64().name("created_at"),
+  updatedAt: __t.u64().name("updated_at"),
+});
 
 const createRoomReducer = {
   code: __t.string(),
   maxPlayers: __t.u32(),
   seed: __t.u32(),
-  name: __t.string(),
 };
 const discoverItemReducer = { code: __t.string(), itemId: __t.string().name("item_id") };
 const drawRolesReducer = { code: __t.string() };
 const endRunReducer = { code: __t.string(), result: __t.string() };
-const joinRoomReducer = { code: __t.string(), name: __t.string() };
+const joinRoomReducer = { code: __t.string() };
 const leaveRoomReducer = { code: __t.string() };
 const logEventReducer = { code: __t.string(), tone: __t.string(), text: __t.string() };
 const publishWorldReducer = {
@@ -122,6 +144,7 @@ const publishWorldReducer = {
   score: __t.u32(),
   extra: __t.string(),
 };
+const registerLandingReducer = {};
 const startRunReducer = { code: __t.string() };
 
 const tablesSchema = __schema({
@@ -149,6 +172,14 @@ const tablesSchema = __schema({
     },
     gameRoomRow,
   ),
+  landingVisit: __table(
+    {
+      name: "landing_visit",
+      indexes: [{ accessor: "identity", name: "landing_visit_identity_idx_btree", algorithm: "btree", columns: ["identity"] }],
+      constraints: [{ name: "landing_visit_identity_key", constraint: "unique", columns: ["identity"] }],
+    },
+    landingVisitRow,
+  ),
   player: __table(
     {
       name: "player",
@@ -157,6 +188,14 @@ const tablesSchema = __schema({
     },
     playerRow,
   ),
+  spectatorGrace: __table(
+    {
+      name: "spectator_grace",
+      indexes: [{ accessor: "id", name: "spectator_grace_id_idx_btree", algorithm: "btree", columns: ["id"] }],
+      constraints: [{ name: "spectator_grace_id_key", constraint: "unique", columns: ["id"] }],
+    },
+    spectatorGraceRow,
+  ),
   thiefState: __table(
     {
       name: "thief_state",
@@ -164,6 +203,14 @@ const tablesSchema = __schema({
       constraints: [{ name: "thief_state_room_code_key", constraint: "unique", columns: ["roomCode"] }],
     },
     thiefStateRow,
+  ),
+  userProfile: __table(
+    {
+      name: "user_profile",
+      indexes: [{ accessor: "identity", name: "user_profile_identity_idx_btree", algorithm: "btree", columns: ["identity"] }],
+      constraints: [{ name: "user_profile_identity_key", constraint: "unique", columns: ["identity"] }],
+    },
+    userProfileRow,
   ),
 });
 
@@ -176,6 +223,7 @@ const reducersSchema = __reducers(
   __reducerSchema("leave_room", leaveRoomReducer),
   __reducerSchema("log_event", logEventReducer),
   __reducerSchema("publish_world", publishWorldReducer),
+  __reducerSchema("register_landing", registerLandingReducer),
   __reducerSchema("start_run", startRunReducer),
 );
 const proceduresSchema = __procedures();
@@ -185,7 +233,10 @@ type SchemaWithAliases = Omit<typeof tablesSchema.schemaType, "tables"> & {
     readonly discovered_item: typeof tablesSchema.schemaType.tables.discoveredItem;
     readonly game_event: typeof tablesSchema.schemaType.tables.gameEvent;
     readonly game_room: typeof tablesSchema.schemaType.tables.gameRoom;
+    readonly landing_visit: typeof tablesSchema.schemaType.tables.landingVisit;
+    readonly spectator_grace: typeof tablesSchema.schemaType.tables.spectatorGrace;
     readonly thief_state: typeof tablesSchema.schemaType.tables.thiefState;
+    readonly user_profile: typeof tablesSchema.schemaType.tables.userProfile;
   };
 };
 
@@ -204,7 +255,10 @@ const tableAccessorAliases = {
   discovered_item: "discoveredItem",
   game_event: "gameEvent",
   game_room: "gameRoom",
+  landing_visit: "landingVisit",
+  spectator_grace: "spectatorGrace",
   thief_state: "thiefState",
+  user_profile: "userProfile",
 } as const;
 
 function withAliases<T extends object>(target: T): T {

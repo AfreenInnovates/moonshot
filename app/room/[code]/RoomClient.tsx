@@ -11,6 +11,8 @@ import {
   useSyncExternalStore,
 } from "react";
 import GameShell from "../../game/GameShell";
+import AuthControls from "../../components/AuthControls";
+import { PROFILE_NAME_KEY, SPACETIME_AUTH_TOKEN_KEY } from "../../lib/auth";
 import { roomById } from "../../game/level";
 import {
   COUNTDOWN_MS,
@@ -20,7 +22,7 @@ import {
 import { resolveRoom, useSession } from "../../game/session";
 import { useGame } from "../../game/store";
 
-const NAME_KEY = "heist:name";
+const NAME_KEY = PROFILE_NAME_KEY;
 
 /** Read browser storage without tripping hydration or effect-ordering rules. */
 const noSubscribe = () => () => {};
@@ -64,6 +66,13 @@ export default function RoomClient({ code }: { code: string }) {
       return "";
     }
   }, []);
+  const readAuthToken = useCallback(() => {
+    try {
+      return localStorage.getItem(SPACETIME_AUTH_TOKEN_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  }, []);
   const readSeat = useCallback(() => {
     try {
       const seat = sessionStorage.getItem(`heist:host:${code}`);
@@ -79,6 +88,7 @@ export default function RoomClient({ code }: { code: string }) {
   const readShare = useCallback(() => typeof navigator.share === "function", []);
 
   const storedName = useStored(readName, "");
+  const authToken = useStored(readAuthToken, "");
   const hostSize = useStored(readSeat, null);
   const link = useStored(readLink, "");
   const canShare = useStored(readShare, false);
@@ -116,12 +126,20 @@ export default function RoomClient({ code }: { code: string }) {
     if (room?.phase !== "playing" || !me?.role) return;
     const game = useGame.getState();
     game.reset();
+    const spectators =
+      room.players.filter((p) => p.role === "spectator").length;
     game.setMode(
       me.role === "thief"
         ? { kind: "thief" }
-        : { kind: "spectator", watching: me.watching ?? "lobby" },
+        : {
+            kind: "spectator",
+            watching: me.watching ?? "lobby",
+            // one spectator cannot cover three rooms, and the vault code only
+            // exists in one of them - let them follow the thief instead
+            roam: spectators <= 1,
+          },
     );
-  }, [room?.phase, me?.role, me?.watching]);
+  }, [room?.phase, me?.role, me?.watching, room?.players]);
 
   const join = async () => {
     if (joining) return;
@@ -201,6 +219,26 @@ export default function RoomClient({ code }: { code: string }) {
 
   /* ---------------------------------------------------------------- gate */
 
+  if (!authToken) {
+    return (
+      <Frame code={code} onBack={backAction}>
+        <div className="mb-4 inline-block border-2 border-[#111216] bg-[#e9ff4f] px-2 py-1 text-[10px] font-black uppercase tracking-[0.18em] shadow-[3px_3px_0_#111216]">Profile gate</div>
+        <h1 className="text-4xl font-black uppercase leading-none tracking-[-0.06em] sm:text-5xl">
+          Sign in to join
+        </h1>
+        <p className="mt-4 max-w-lg border-l-4 border-[#3b63ff] pl-4 text-sm font-medium leading-relaxed text-[#5a5960]">
+          Use your Google profile once. Your saved name will be used automatically in every room.
+        </p>
+        <div className="mt-8 flex items-center gap-4">
+          <AuthControls />
+          <Link href="/" className="text-[10px] font-black uppercase tracking-[0.16em] text-[#6c6b70] hover:text-[#111216]">
+            Back to base
+          </Link>
+        </div>
+      </Frame>
+    );
+  }
+
   if (status === "idle") {
     return (
       <Frame code={code} onBack={backAction}>
@@ -276,6 +314,9 @@ export default function RoomClient({ code }: { code: string }) {
 
   /* --------------------------------------------------------------- game */
 
+  const soleSpectator =
+    (room?.players.filter((p) => p.role === "spectator").length ?? 0) <= 1;
+
   if (room?.phase === "playing" && me?.role) {
     return (
       <main className="relative flex-1">
@@ -283,7 +324,9 @@ export default function RoomClient({ code }: { code: string }) {
           title={
             me.role === "thief"
               ? `Thief · room ${code}`
-              : `${roomById(me.watching ?? "lobby").name} · room ${code}`
+              : soleSpectator
+                ? `Spotter · room ${code}`
+                : `${roomById(me.watching ?? "lobby").name} · room ${code}`
           }
         />
       </main>

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import Image from "next/image";
 import mascotImg from "../ChatGPT Image Sep 6, 2026, 12_03_22 AM.png";
+import LandingCounter from "./components/LandingCounter";
+import AuthControls from "./components/AuthControls";
 
 /* ── data ─────────────────────────────────────────────────────────────── */
 
@@ -45,9 +47,33 @@ export default function Home() {
             <span className="hidden text-[10px] font-bold uppercase tracking-[0.16em] text-[#6c6b70] md:block">Features</span>
             <Link href="/play" className="hidden text-[10px] font-bold uppercase tracking-[0.16em] text-[#6c6b70] md:block">Play Now</Link>
             <Link href="/rooms#join" className="hidden border-2 border-[#111216] px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] hover:bg-[#111216] hover:text-[#f2eee5] sm:block">Join a Room</Link>
+            <AuthControls />
             <Link href="/rooms" className="brutal-button px-4 py-2 text-[10px]">Create a Room</Link>
           </div>
         </nav>
+
+        <div className="grid border-b-2 border-[#111216] sm:grid-cols-3">
+          <div className="border-b-2 border-[#111216] py-3 sm:border-b-0 sm:border-r-2 sm:pr-4">
+            <div className="text-lg font-black uppercase leading-none tracking-tight">
+              <LandingCounter />
+            </div>
+            <div className="mt-1 text-[9px] font-bold uppercase tracking-[0.16em] text-[#6c6b70]">
+              Moonshots landed
+            </div>
+          </div>
+          <div className="border-b-2 border-[#111216] py-3 sm:border-b-0 sm:border-r-2 sm:px-4">
+            <div className="text-lg font-black uppercase leading-none tracking-tight">3K+</div>
+            <div className="mt-1 text-[9px] font-bold uppercase tracking-[0.16em] text-[#6c6b70]">
+              X views
+            </div>
+          </div>
+          <div className="py-3 sm:pl-4">
+            <div className="text-lg font-black uppercase leading-none tracking-tight">20+</div>
+            <div className="mt-1 text-[9px] font-bold uppercase tracking-[0.16em] text-[#6c6b70]">
+              Early playtests
+            </div>
+          </div>
+        </div>
 
         {/* ═══════════════ HERO ═══════════════ */}
         <section className="grid items-start gap-8 pt-8 pb-6 lg:grid-cols-[1.2fr_0.8fr] lg:gap-12 lg:pt-10 lg:pb-8">

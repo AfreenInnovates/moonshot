@@ -16,11 +16,15 @@ import type {
   VoiceTransmission,
 } from "./types";
 import { WATCHABLE } from "./types";
+import { SPACETIME_AUTH_TOKEN_KEY } from "../../lib/auth";
 
 const PHASES: Phase[] = ["lobby", "countdown", "playing", "ended"];
 const COMMAND_CODES: CommandCode[] = ["LEFT", "RIGHT", "FORWARD", "BACK", "RUN", "HIDE", "STOP"];
 
-type SnapshotExtra = Pick<Snapshot, "guards" | "cams" | "collected" | "doorsOpen" | "explored">;
+type SnapshotExtra = Pick<
+  Snapshot,
+  "guards" | "cams" | "collected" | "doorsOpen" | "explored" | "ventOpen"
+>;
 
 type RoomWaiter = {
   matches: (room: RoomState) => boolean;
@@ -129,8 +133,11 @@ export class SpacetimeNet implements NetClient {
     const database = process.env.NEXT_PUBLIC_SPACETIME_MODULE_NAME || "one-heist-spacetime";
     const tokenKey = `heist:spacetime-token:${host}:${database}:${identitySuffix()}`;
     let token = "";
+    let authenticated = false;
     try {
-      token = localStorage.getItem(tokenKey) ?? "";
+      token = localStorage.getItem(SPACETIME_AUTH_TOKEN_KEY) ?? "";
+      authenticated = Boolean(token);
+      if (!authenticated) token = localStorage.getItem(tokenKey) ?? "";
     } catch {
       /* anonymous identity can still connect without persistence */
     }
@@ -151,8 +158,8 @@ export class SpacetimeNet implements NetClient {
         .onConnect((connectedConn, identity, nextToken) => {
           void connectedConn;
           this.identity = identity.toHexString();
-          try {
-            localStorage.setItem(tokenKey, nextToken);
+           try {
+             if (!authenticated) localStorage.setItem(tokenKey, nextToken);
           } catch {
             /* private browsing can still use this live connection */
           }
@@ -365,6 +372,7 @@ export class SpacetimeNet implements NetClient {
       collected: [],
       doorsOpen: [],
       explored: [],
+      ventOpen: false,
       discovered: items,
       log,
       ...extra,
@@ -394,7 +402,6 @@ export class SpacetimeNet implements NetClient {
         code: room.code,
         maxPlayers: room.maxPlayers,
         seed: room.seed,
-        name: "Host",
       });
       return room;
     } catch {
@@ -413,7 +420,7 @@ export class SpacetimeNet implements NetClient {
     this.myId = `${code}:${this.identity}`;
     player.id = this.myId;
     try {
-      await this.conn.reducers.joinRoom({ code, name: player.name });
+      await this.conn.reducers.joinRoom({ code });
       const room = await this.waitForRoom(
         (current) =>
           current.code === code &&
@@ -468,6 +475,7 @@ export class SpacetimeNet implements NetClient {
           collected: snap.collected,
           doorsOpen: snap.doorsOpen,
           explored: snap.explored,
+          ventOpen: snap.ventOpen,
         }),
       });
     } else if (msg.type === "discover") {

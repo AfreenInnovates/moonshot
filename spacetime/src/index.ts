@@ -17,7 +17,7 @@
  * stays the source of truth.
  */
 
-import { ScheduleAt, schema, table, t, type ReducerCtx } from 'spacetimedb/server';
+import { ScheduleAt, SenderError, schema, table, t, type ReducerCtx } from 'spacetimedb/server';
 
 const WATCHABLE = ['lobby', 'sec', 'vault'] as const;
 const MIN_PLAYERS = 2;
@@ -129,6 +129,37 @@ const spacetimedb = schema({
       at: t.u64(),
     }
   ),
+
+  /** One anonymous row per browser profile that lands on the homepage. */
+  landing_visit: table(
+    { public: true },
+    {
+      identity: t.string().primaryKey(),
+      visited_at: t.u64(),
+    }
+  ),
+
+  /** Public display profile; contact details stay in the private table below. */
+  user_profile: table(
+    { public: true },
+    {
+      identity: t.string().primaryKey(),
+      name: t.string(),
+      picture: t.string(),
+      created_at: t.u64(),
+      updated_at: t.u64(),
+    }
+  ),
+
+  /** Google email is persisted for the account but never exposed to clients. */
+  account_email: table(
+    {},
+    {
+      identity: t.string().primaryKey(),
+      email: t.string(),
+      updated_at: t.u64(),
+    }
+  ),
   spectator_grace: spectatorGrace,
 });
 
@@ -140,6 +171,38 @@ export default spacetimedb;
 
 const nowMs = (ts: { toMillis(): bigint }) => ts.toMillis();
 type HeistContext = ReducerCtx<typeof spacetimedb.schemaType>;
+
+type AuthClaims = Record<string, unknown>;
+
+function authClaims(ctx: HeistContext): AuthClaims | null {
+  const jwt = ctx.senderAuth.jwt;
+  if (!jwt) return null;
+  return jwt.fullPayload as AuthClaims;
+}
+
+function claim(claims: AuthClaims, key: string) {
+  const value = claims[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function profileFromAuth(ctx: HeistContext) {
+  const claims = authClaims(ctx);
+  if (!claims) return null;
+
+  const email = claim(claims, 'email');
+  const name = (claim(claims, 'name') || claim(claims, 'preferred_username') || email.split('@')[0] || 'Player')
+    .replace(/\s+/g, ' ')
+    .slice(0, 16);
+  const picture = claim(claims, 'picture');
+
+  return { name, email, picture };
+}
+
+function requireProfile(ctx: HeistContext) {
+  const profile = ctx.db.user_profile.identity.find(ctx.sender.toHexString());
+  if (!profile) throw new SenderError('Google sign-in required');
+  return profile;
+}
 
 function endRoom(ctx: HeistContext, code: string, result: string, text: string) {
   const room = ctx.db.game_room.code.find(code);
@@ -212,10 +275,39 @@ function mulberry32(seed: number) {
 /* reducers                                                                    */
 /* -------------------------------------------------------------------------- */
 
+/** Persist the authenticated Google profile when its SpacetimeDB identity connects. */
+export const on_connect = spacetimedb.clientConnected((ctx) => {
+  const profile = profileFromAuth(ctx);
+  if (!profile) return;
+
+  const identity = ctx.sender.toHexString();
+  const at = nowMs(ctx.timestamp);
+  const existing = ctx.db.user_profile.identity.find(identity);
+  if (existing) {
+    ctx.db.user_profile.identity.update({ ...existing, ...profile, updated_at: at });
+  } else {
+    ctx.db.user_profile.insert({
+      identity,
+      ...profile,
+      created_at: at,
+      updated_at: at,
+    });
+  }
+
+  if (!profile.email) return;
+  const email = ctx.db.account_email.identity.find(identity);
+  if (email) {
+    ctx.db.account_email.identity.update({ ...email, email: profile.email, updated_at: at });
+  } else {
+    ctx.db.account_email.insert({ identity, email: profile.email, updated_at: at });
+  }
+});
+
 export const create_room = spacetimedb.reducer(
-  { code: t.string(), max_players: t.u32(), seed: t.u32(), name: t.string() },
-  (ctx, { code, max_players, seed, name }) => {
+  { code: t.string(), max_players: t.u32(), seed: t.u32() },
+  (ctx, { code, max_players, seed }) => {
     if (ctx.db.game_room.code.find(code)) throw new Error('room code taken');
+    const profile = requireProfile(ctx);
     const at = nowMs(ctx.timestamp);
     const host = ctx.sender.toHexString();
 
@@ -234,7 +326,7 @@ export const create_room = spacetimedb.reducer(
       id: `${code}:${host}`,
       room_code: code,
       identity: host,
-      name,
+      name: profile.name,
       role: '',
       watching: '',
       joined_at: at,
@@ -246,10 +338,11 @@ export const create_room = spacetimedb.reducer(
 );
 
 export const join_room = spacetimedb.reducer(
-  { code: t.string(), name: t.string() },
-  (ctx, { code, name }) => {
+  { code: t.string() },
+  (ctx, { code }) => {
     const room = ctx.db.game_room.code.find(code);
     if (!room) throw new Error('no such room');
+    const profile = requireProfile(ctx);
 
     const identity = ctx.sender.toHexString();
     const id = `${code}:${identity}`;
@@ -262,7 +355,7 @@ export const join_room = spacetimedb.reducer(
       // reconnecting - keep whatever role they already hold
       ctx.db.player.id.update({
         ...existing,
-        name,
+        name: profile.name,
         connected: true,
         rejoin_until: 0n,
         connection_id: ctx.connectionId?.toHexString() ?? existing.connection_id,
@@ -282,7 +375,7 @@ export const join_room = spacetimedb.reducer(
       id,
       room_code: code,
       identity,
-      name,
+      name: profile.name,
       role: '',
       watching: '',
       joined_at: at,
@@ -621,6 +714,20 @@ export const log_event = spacetimedb.reducer(
       at: nowMs(ctx.timestamp),
     });
   }
+);
+
+/** Record the first homepage visit for this anonymous browser identity. */
+export const register_landing = spacetimedb.reducer(
+  {},
+  (ctx) => {
+    const identity = ctx.sender.toHexString();
+    if (ctx.db.landing_visit.identity.find(identity)) return;
+
+    ctx.db.landing_visit.insert({
+      identity,
+      visited_at: nowMs(ctx.timestamp),
+    });
+  },
 );
 
 export const end_run = spacetimedb.reducer(
