@@ -18,14 +18,14 @@ const STEPS = [
 
 export default function Home() {
   return (
-    <main className="brutal-grid relative min-h-0 flex-1 overflow-y-auto text-[#111216]">
+    <main className="brutal-grid relative min-h-[100dvh] min-h-0 flex-1 overflow-x-hidden overflow-y-auto text-[#111216]">
       <div className="mx-auto flex min-h-full max-w-[1200px] flex-col px-5 py-5 sm:px-8 sm:py-8">
 
         {/* ═══════════════ NAV ═══════════════ */}
-        <nav className="flex items-center justify-between border-b-2 border-[#111216] pb-4">
+        <nav className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#111216] pb-4">
           <Link
             href="/"
-            className="flex items-center gap-2.5 text-xs font-black uppercase tracking-[0.18em]"
+            className="flex min-w-0 items-center gap-2.5 text-xs font-black uppercase tracking-[0.18em]"
           >
             <span className="relative grid h-8 w-8 place-items-center border-2 border-[#111216] bg-[#e9ff4f] text-[10px]">
               <svg width="14" height="12" viewBox="0 0 14 12" fill="none" aria-hidden>
@@ -34,13 +34,13 @@ export default function Home() {
             </span>
             <span>
               Blind Run{" "}
-              <span className="text-[10px] font-bold tracking-[0.12em] text-[#6c6b70]">
+                <span className="hidden text-[10px] font-bold tracking-[0.12em] text-[#6c6b70] sm:inline">
                 | Trust the Voice
               </span>
             </span>
           </Link>
 
-          <div className="flex items-center gap-6">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-6">
             <span className="hidden text-[10px] font-bold uppercase tracking-[0.16em] text-[#6c6b70] md:block">How to Play</span>
             <span className="hidden text-[10px] font-bold uppercase tracking-[0.16em] text-[#6c6b70] md:block">Features</span>
             <Link href="/play" className="hidden text-[10px] font-bold uppercase tracking-[0.16em] text-[#6c6b70] md:block">Play Now</Link>
@@ -76,7 +76,7 @@ export default function Home() {
 
               {/* mascot — overlapping on top of the headline */}
               <div
-                className="pointer-events-none absolute z-10"
+                className="pointer-events-none absolute z-10 hidden sm:block"
                 style={{ right: "-5%", top: "8%", width: "clamp(140px, 22vw, 260px)", transform: "rotate(6deg)" }}
               >
                 <Image
@@ -120,7 +120,7 @@ export default function Home() {
             </p>
 
             {/* CTA + meta */}
-            <div className="mt-6 flex flex-wrap items-end gap-6">
+            <div className="mt-6 flex flex-wrap items-end gap-4 sm:gap-6">
               <Link href="/rooms" className="brutal-button px-5 py-3">
                 Create a Room <span className="ml-2">&rarr;</span>
               </Link>
@@ -130,7 +130,7 @@ export default function Home() {
               >
                 Join a Room <span className="ml-2">&rarr;</span>
               </Link>
-              <div className="flex gap-5">
+              <div className="flex flex-wrap gap-4 sm:gap-5">
                 {[
                   { value: "2\u20134", label: "Players" },
                   { value: "~10 Min", label: "Per Run" },
@@ -169,7 +169,7 @@ export default function Home() {
           {/* ── LEFT: How to Play ── */}
           <div className="brutal-panel p-4 sm:p-5">
             <h2 className="mb-4 text-xs font-black uppercase tracking-[0.22em]">How to Play</h2>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid gap-5 sm:grid-cols-3 sm:gap-3">
               {[
                 {
                   n: "1",

@@ -11,6 +11,7 @@ import {
   MIN_PLAYERS,
   newId,
   type NetClient,
+  type NetConnectionState,
   type NetMessage,
   type PlayerInfo,
   type RoomState,
@@ -24,13 +25,18 @@ export type SessionStatus =
   | "idle"
   | "connecting"
   | "connected"
+  | "error"
   | "notfound"
   | "full"
   | "unavailable";
 
+export type SessionConnectionState = NetConnectionState | "reconnected";
+
 interface SessionState {
   net: NetClient | null;
   status: SessionStatus;
+  connectionState: SessionConnectionState;
+  errorMessage: string | null;
   code: string | null;
   myId: string | null;
   room: RoomState | null;
@@ -63,6 +69,8 @@ const commandSubs = new Set<(command: CommandCode, by: string) => void>();
 const voiceSubs = new Set<(voice: VoiceTransmission) => void>();
 const powerUpSubs = new Set<(effect: "heal" | "invis", by: string) => void>();
 let unsubscribe: (() => void) | null = null;
+let unsubscribeConnection: (() => void) | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 function playerIdForRoom(code: string) {
   const key = `heist:player:${code}`;
@@ -80,6 +88,8 @@ function playerIdForRoom(code: string) {
 export const useSession = create<SessionState>()((set, get) => ({
   net: null,
   status: "idle",
+  connectionState: "connected",
+  errorMessage: null,
   code: null,
   myId: null,
   room: null,
@@ -90,6 +100,9 @@ export const useSession = create<SessionState>()((set, get) => ({
 
   connect: async (code, name, seedRoom) => {
     get().leave();
+
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
 
     const net = createNet();
     const myId = playerIdForRoom(code);
@@ -103,7 +116,34 @@ export const useSession = create<SessionState>()((set, get) => ({
       rejoinUntil: 0,
     };
 
-    set({ net, myId, code, status: "connecting", startError: null });
+    set({
+      net,
+      myId,
+      code,
+      status: "connecting",
+      connectionState: "connected",
+      errorMessage: null,
+      startError: null,
+    });
+
+    unsubscribeConnection = net.onConnection((state) => {
+      if (get().net !== net) return;
+      if (state === "reconnecting") {
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+        set({ connectionState: "reconnecting" });
+        return;
+      }
+
+      const wasReconnecting = get().connectionState === "reconnecting";
+      set({ connectionState: wasReconnecting ? "reconnected" : "connected" });
+      if (wasReconnecting) {
+        reconnectTimer = setTimeout(() => {
+          if (get().net === net && get().connectionState === "reconnected")
+            set({ connectionState: "connected" });
+        }, 1800);
+      }
+    });
 
     unsubscribe = net.onMessage((msg: NetMessage) => {
       switch (msg.type) {
@@ -146,24 +186,38 @@ export const useSession = create<SessionState>()((set, get) => ({
       if (seedRoom) {
         const created = await net.createRoom({ ...seedRoom, hostId: "" });
         if (!created) {
-          net.disconnect();
+          unsubscribeConnection?.();
+          unsubscribeConnection = null;
+          net.disconnect(true);
           unsubscribe?.();
           unsubscribe = null;
-          set({ status: "notfound", net: null });
+          set({
+            status: "error",
+            net: null,
+            errorMessage: "The room service did not respond. Check your connection and try again.",
+          });
           return;
         }
       }
     } catch {
-      net.disconnect();
+      unsubscribeConnection?.();
+      unsubscribeConnection = null;
+      net.disconnect(true);
       unsubscribe?.();
       unsubscribe = null;
-      set({ status: "notfound", net: null });
+      set({
+        status: "error",
+        net: null,
+        errorMessage: "The room service did not respond. Check your connection and try again.",
+      });
       return;
     }
 
     const result = await net.join(code, me);
     if ("error" in result) {
-      net.disconnect();
+      unsubscribeConnection?.();
+      unsubscribeConnection = null;
+      net.disconnect(true);
       unsubscribe?.();
       unsubscribe = null;
       set({
@@ -172,8 +226,14 @@ export const useSession = create<SessionState>()((set, get) => ({
             ? "full"
             : result.error === "unavailable"
               ? "unavailable"
-              : "notfound",
+              : result.error === "error"
+                ? "error"
+                : "notfound",
         net: null,
+        errorMessage:
+          result.error === "error"
+            ? "The room service did not respond. Check your connection and try again."
+            : null,
       });
       return;
     }
@@ -181,6 +241,8 @@ export const useSession = create<SessionState>()((set, get) => ({
       myId: me.id,
       room: result.room,
       status: "connected",
+      connectionState: "connected",
+      errorMessage: null,
       isHost: result.room.hostId === me.id,
     });
   },
@@ -215,8 +277,12 @@ export const useSession = create<SessionState>()((set, get) => ({
 
   disconnect: (intentional = false) => {
     const s = get();
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
     unsubscribe?.();
     unsubscribe = null;
+    unsubscribeConnection?.();
+    unsubscribeConnection = null;
     s.net?.disconnect(intentional);
     snapshotSubs.clear();
     discoverSubs.clear();
@@ -226,6 +292,8 @@ export const useSession = create<SessionState>()((set, get) => ({
     set({
       net: null,
       status: "idle",
+      connectionState: "connected",
+      errorMessage: null,
       code: null,
       myId: null,
       room: null,

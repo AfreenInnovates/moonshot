@@ -30,6 +30,10 @@
   box-sizing: border-box;
 }
 
+html {
+  min-height: 100%;
+}
+
 ::selection {
   background: var(--acid);
   color: var(--ink);
@@ -39,6 +43,8 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  min-height: 100dvh;
+  overscroll-behavior: none;
 }
 
 button,
@@ -52,6 +58,12 @@ a,
 select,
 input {
   -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+select {
+  touch-action: manipulation;
 }
 
 .brutal-grid {
@@ -152,6 +164,50 @@ input {
 
 .signal-pulse {
   animation: signal-pulse 1.8s ease-in-out infinite;
+}
+
+.game-shell {
+  min-height: 100dvh;
+}
+
+.mobile-joystick {
+  position: fixed;
+  left: max(1rem, env(safe-area-inset-left));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  touch-action: none;
+  user-select: none;
+}
+
+.game-top-bar {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+}
+
+.game-bottom-bar {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+}
+
+@media (max-width: 639px) {
+  .game-bottom-bar-thief {
+    bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  }
+
+  .game-stats-thief {
+    max-height: min(9rem, 32dvh);
+    overflow-y: auto;
+  }
+
+  .game-help-panel {
+    display: none;
+  }
+
+  .game-command-deck {
+    bottom: calc(8.5rem + env(safe-area-inset-bottom));
+    width: calc(100vw - 1.5rem);
+  }
 }
 
 @keyframes signal-pulse {

@@ -12,6 +12,7 @@ import type {
   PlayerInfo,
   RoomState,
   Snapshot,
+  NetConnectionState,
   StartResult,
   VoiceTransmission,
 } from "./types";
@@ -41,6 +42,8 @@ const joinFailure = (error: unknown): JoinFailure => {
   if (lower.includes("full")) return "full";
   if (lower.includes("started") || lower.includes("over") || lower.includes("countdown"))
     return "unavailable";
+  if (lower.includes("timed out") || lower.includes("timeout") || lower.includes("disconnect") || lower.includes("network"))
+    return "error";
   return "notfound";
 };
 
@@ -112,6 +115,7 @@ export class SpacetimeNet implements NetClient {
   readonly kind = "spacetime" as const;
   private conn: DbConnection | null = null;
   private listeners = new Set<(m: NetMessage) => void>();
+  private connectionListeners = new Set<(state: NetConnectionState) => void>();
   private code = "";
   private myId = "";
   private identity = "";
@@ -119,11 +123,17 @@ export class SpacetimeNet implements NetClient {
   private roomWaiters = new Set<RoomWaiter>();
   private drawTimer: ReturnType<typeof setTimeout> | null = null;
   private commandsReady = false;
+  private intentionalDisconnect = false;
+
+  private notifyConnection(state: NetConnectionState) {
+    for (const cb of this.connectionListeners) cb(state);
+  }
 
   async connect(code: string): Promise<void> {
     this.code = code;
     this.commandsReady = false;
-    if (this.conn) this.disconnect();
+    this.intentionalDisconnect = false;
+    if (this.conn) this.disconnect(true);
 
     const host = process.env.NEXT_PUBLIC_SPACETIME_HOST || "wss://maincloud.spacetimedb.com";
     const database = process.env.NEXT_PUBLIC_SPACETIME_MODULE_NAME || "one-heist-spacetime";
@@ -150,7 +160,8 @@ export class SpacetimeNet implements NetClient {
         .withToken(token)
         .onConnect((connectedConn, identity, nextToken) => {
           void connectedConn;
-          this.identity = identity.toHexString();
+           this.identity = identity.toHexString();
+           this.notifyConnection("connected");
           try {
             localStorage.setItem(tokenKey, nextToken);
           } catch {
@@ -160,7 +171,11 @@ export class SpacetimeNet implements NetClient {
         })
         .onConnectError((context, error) => {
           void context;
-          finish(error);
+         finish(error);
+        })
+        .onDisconnect((_context, error) => {
+          void error;
+          if (!this.intentionalDisconnect) this.notifyConnection("reconnecting");
         })
         .build();
 
@@ -320,6 +335,7 @@ export class SpacetimeNet implements NetClient {
            : null,
     };
     this.room = state;
+    this.notifyConnection("connected");
     this.scheduleRoleDraw(state);
     for (const cb of this.listeners) cb({ type: "room", room: state });
     for (const waiter of this.roomWaiters) if (waiter.matches(state)) waiter.resolve(state);
@@ -372,7 +388,8 @@ export class SpacetimeNet implements NetClient {
     for (const cb of this.listeners) cb({ type: "world", snap });
   }
 
-  disconnect(): void {
+  disconnect(intentional = false): void {
+    this.intentionalDisconnect = intentional;
     if (this.drawTimer) clearTimeout(this.drawTimer);
     this.drawTimer = null;
     for (const waiter of this.roomWaiters) waiter.reject(new Error("Disconnected from SpacetimeDB"));
@@ -384,6 +401,7 @@ export class SpacetimeNet implements NetClient {
     this.conn?.disconnect();
     this.conn = null;
     this.listeners.clear();
+    this.connectionListeners.clear();
   }
 
   async createRoom(room: RoomState): Promise<RoomState | null> {
@@ -526,5 +544,10 @@ export class SpacetimeNet implements NetClient {
   onMessage(cb: (m: NetMessage) => void): () => void {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
+  }
+
+  onConnection(cb: (state: NetConnectionState) => void): () => void {
+    this.connectionListeners.add(cb);
+    return () => this.connectionListeners.delete(cb);
   }
 }

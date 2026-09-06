@@ -6,6 +6,7 @@ import type {
   NetMessage,
   PlayerInfo,
   RoomState,
+  NetConnectionState,
   StartFailure,
   StartResult,
 } from "./types";
@@ -22,8 +23,13 @@ export class ServerNet implements NetClient {
   readonly kind = "server" as const;
   private es: EventSource | null = null;
   private listeners = new Set<(m: NetMessage) => void>();
+  private connectionListeners = new Set<(state: NetConnectionState) => void>();
   private code = "";
   private playerId = "";
+
+  private notifyConnection(state: NetConnectionState) {
+    for (const cb of this.connectionListeners) cb(state);
+  }
 
   async connect(code: string) {
     this.code = code;
@@ -32,13 +38,21 @@ export class ServerNet implements NetClient {
       const es = new EventSource(`${API}/stream?code=${encodeURIComponent(code)}`);
       this.es = es;
       let settled = false;
+      let opened = false;
       const done = () => {
         if (settled) return;
         settled = true;
         resolve();
       };
-      es.onopen = done;
-      es.onerror = done; // the polling fallbacks below still work
+      es.onopen = () => {
+        opened = true;
+        this.notifyConnection("connected");
+        done();
+      };
+      es.onerror = () => {
+        if (opened) this.notifyConnection("reconnecting");
+        done(); // EventSource performs its own retry
+      };
       es.onmessage = (e) => {
         const msg = JSON.parse(e.data) as NetMessage;
         for (const cb of this.listeners) cb(msg);
@@ -72,6 +86,7 @@ export class ServerNet implements NetClient {
     }
     this.disconnectStream();
     this.listeners.clear();
+    this.connectionListeners.clear();
     this.code = "";
     this.playerId = "";
   }
@@ -99,7 +114,7 @@ export class ServerNet implements NetClient {
     return res?.room ?? null;
   }
 
-  async join(code: string, player: PlayerInfo) {
+  async join(code: string, player: PlayerInfo): Promise<{ room: RoomState } | { error: JoinFailure }> {
     this.playerId = player.id;
     const res = await this.post<{ room?: RoomState; error?: JoinFailure }>({
       action: "join",
@@ -107,6 +122,7 @@ export class ServerNet implements NetClient {
       player,
     });
     if (res?.room) return { room: res.room };
+    if (!res) return { error: "error" };
     return { error: (res?.error ?? "notfound") as JoinFailure };
   }
 
@@ -150,5 +166,10 @@ export class ServerNet implements NetClient {
   onMessage(cb: (m: NetMessage) => void) {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
+  }
+
+  onConnection(cb: (state: NetConnectionState) => void) {
+    this.connectionListeners.add(cb);
+    return () => this.connectionListeners.delete(cb);
   }
 }

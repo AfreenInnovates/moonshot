@@ -7,6 +7,7 @@ import QRCode from "qrcode";
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -47,6 +48,8 @@ export default function RoomClient({ code }: { code: string }) {
   const startNow = useSession((s) => s.startNow);
   const startError = useSession((s) => s.startError);
   const status = useSession((s) => s.status);
+  const connectionState = useSession((s) => s.connectionState);
+  const connectionError = useSession((s) => s.errorMessage);
   const rawRoom = useSession((s) => s.room);
   const myId = useSession((s) => s.myId);
   const isHost = useSession((s) => s.isHost);
@@ -56,6 +59,7 @@ export default function RoomClient({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
   const [starting, setStarting] = useState(false);
   const [qrCode, setQrCode] = useState("");
+  const leaving = useRef(false);
 
   const readName = useCallback(() => {
     try {
@@ -123,8 +127,8 @@ export default function RoomClient({ code }: { code: string }) {
     );
   }, [room?.phase, me?.role, me?.watching]);
 
-  const join = async () => {
-    if (joining) return;
+  const join = useCallback(async () => {
+    if (joining || leaving.current) return;
     const n = name.trim() || `player-${Math.floor(Math.random() * 900 + 100)}`;
     try {
       localStorage.setItem(NAME_KEY, n);
@@ -151,7 +155,14 @@ export default function RoomClient({ code }: { code: string }) {
     } finally {
       setJoining(false);
     }
-  };
+  }, [code, connect, hostSize, joining, name]);
+
+  // Room URLs are the invite. Resolve and join them directly so QR scans do
+  // not send players through a second code-entry screen.
+  useEffect(() => {
+    if (status !== "idle" || joining || leaving.current) return;
+    void join();
+  }, [join, joining, status]);
 
   const copyLink = async () => {
     if (!link) return;
@@ -193,11 +204,12 @@ export default function RoomClient({ code }: { code: string }) {
   };
 
   const leaveAndGo = () => {
+    leaving.current = true;
     leave();
     router.push("/rooms");
   };
 
-  const backAction = status === "connected" ? leaveAndGo : undefined;
+  const backAction = status !== "idle" ? leaveAndGo : undefined;
 
   /* ---------------------------------------------------------------- gate */
 
@@ -242,6 +254,24 @@ export default function RoomClient({ code }: { code: string }) {
           <span className="signal-pulse h-3 w-3 rounded-full bg-[#3b63ff]" />
           <div><p className="text-xs font-black uppercase tracking-widest">Opening secure room</p><p className="mt-1 text-xs font-medium text-[#4e4d53]">Finding the facility signal for {code}...</p></div>
         </div>
+      </Frame>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <Frame code={code} onBack={backAction}>
+        <div className="mb-4 inline-block border-2 border-[#111216] bg-[#ffb347] px-2 py-1 text-[10px] font-black uppercase tracking-[0.18em] shadow-[3px_3px_0_#111216]">Connection error</div>
+        <h1 className="text-4xl font-black uppercase leading-none tracking-[-0.06em] sm:text-5xl">Could not reach the room</h1>
+        <p className="mt-4 max-w-lg border-l-4 border-[#ffb347] pl-4 text-sm font-medium leading-relaxed text-[#5a5960]">
+          {connectionError ?? "Check your connection and try the invite again."}
+        </p>
+        <button
+          onClick={() => disconnect(true)}
+          className="brutal-button mt-8 min-h-12 px-5 py-3"
+        >
+          Try again -&gt;
+        </button>
       </Frame>
     );
   }
@@ -364,22 +394,22 @@ export default function RoomClient({ code }: { code: string }) {
       <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <input
+             <input
               readOnly
               value={link}
               aria-label="Room invite link"
-              className="brutal-input w-full max-w-xl px-3 py-3 font-mono text-xs text-[#5a5960] outline-none sm:flex-1"
+               className="brutal-input w-full min-w-0 max-w-xl px-3 py-3 font-mono text-xs text-[#5a5960] outline-none sm:flex-1"
             />
             <div className="flex shrink-0 gap-3">
               <button
                 onClick={copyLink}
                 disabled={!link}
-                className="brutal-button px-4 py-3 disabled:cursor-wait disabled:opacity-50"
+                 className="brutal-button min-h-12 px-4 py-3 disabled:cursor-wait disabled:opacity-50"
               >
                 {copied ? "Copied" : "Copy link"}
               </button>
               {canShare && (
-                <button onClick={shareLink} className="brutal-button px-4 py-3">
+                 <button onClick={shareLink} className="brutal-button min-h-12 px-4 py-3">
                   Share
                 </button>
               )}
@@ -480,6 +510,16 @@ export default function RoomClient({ code }: { code: string }) {
         </p>
       )}
 
+      {connectionState !== "connected" && (
+        <p
+          className={`mt-3 border-l-2 pl-3 text-[11px] font-bold ${connectionState === "reconnected" ? "border-[#24a866] text-[#16834d]" : "border-[#ffb347] text-[#9a641f]"}`}
+          role="status"
+          aria-live="polite"
+        >
+          {connectionState === "reconnected" ? "Connection restored." : "Connection lost. Reconnecting..."}
+        </p>
+      )}
+
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <button onClick={leaveAndGo} className="border-2 border-[#111216] bg-transparent px-3 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-[#111216] hover:text-[#f2eee5]">
           Leave room
@@ -509,7 +549,7 @@ function Frame({
   onBack?: () => void;
 }) {
   return (
-    <main className="brutal-grid relative min-h-0 flex-1 overflow-y-auto text-[#111216]">
+    <main className="brutal-grid relative min-h-[100dvh] min-h-0 flex-1 overflow-x-hidden overflow-y-auto text-[#111216]">
       <div className="mx-auto flex min-h-full max-w-5xl flex-col px-5 py-5 sm:px-8 sm:py-8">
         <Link
           href="/rooms"
