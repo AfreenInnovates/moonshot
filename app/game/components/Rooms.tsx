@@ -87,11 +87,22 @@ function FloorGuide({ color, x = 0 }: { color: string; x?: number }) {
   );
 }
 
-function RoomEdgeLights({ color, z, count = 5 }: { color: string; z: number; count?: number }) {
+/** Accent strip along one wall of a room. `cx` is that room's centre in x. */
+function RoomEdgeLights({
+  color,
+  z,
+  cx = 0,
+  count = 5,
+}: {
+  color: string;
+  z: number;
+  cx?: number;
+  count?: number;
+}) {
   return (
     <group>
       {Array.from({ length: count }, (_, i) => (
-        <LightBar key={i} position={[-4.2 + i * 2.1, 0.08, z]} width={1.05} color={color} />
+        <LightBar key={i} position={[cx - 4.2 + i * 2.1, 0.08, z]} width={1.05} color={color} />
       ))}
     </group>
   );
@@ -229,7 +240,7 @@ function SecurityRoom() {
       <ServerRack position={[-20.8, 0, 1.1]} color={ROOM_COLORS.security} />
       <ServerRack position={[-19.8, 0, 1.1]} color={ROOM_COLORS.security} />
       <ServerRack position={[-18.8, 0, 1.1]} color="#ff5b55" />
-      <RoomEdgeLights color={ROOM_COLORS.security} z={-6.68} />
+      <RoomEdgeLights color={ROOM_COLORS.security} z={-6.68} cx={-15} />
       <FloorMark position={[-15, 0, 1]} size={[0.1, 9.5]} color={ROOM_COLORS.security} opacity={0.3} />
 
       <CeilingLight position={[-18.5, 3.55, -3.5]} cast color="#d6ffe8" />
@@ -335,7 +346,7 @@ function VaultRoom() {
       <WallPanel position={[9.2, 0, 6.72]} width={1.8} color={ROOM_COLORS.vault} rotationY={Math.PI} />
       <FloorMark position={[15, 0, 1.5]} size={[0.12, 8.2]} color={ROOM_COLORS.vault} opacity={0.3} />
       <FloorMark position={[15, 0, -5.2]} size={[5.4, 0.12]} color={ROOM_COLORS.vault} opacity={0.55} />
-      <RoomEdgeLights color={ROOM_COLORS.vault} z={6.68} />
+      <RoomEdgeLights color={ROOM_COLORS.vault} z={6.68} cx={15} />
 
       <CeilingLight position={[11.5, 3.55, -3]} cast color="#fff0c2" />
       <CeilingLight position={[18.5, 3.55, -3]} color="#fff0c2" />

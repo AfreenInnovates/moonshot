@@ -251,6 +251,14 @@ function RoomFog({ room }: { room: RoomDef }) {
   // handoff; it reads as a giant wall until the fade has completed.
   if (!mounted || thiefView || explored) return null;
 
+  // A posted spectator gets nothing here at all. `Rooms.tsx` already mounts no
+  // contents for a room they were not given, so there is nothing to hide - and
+  // marking it up actively hurt them: their camera sits over the neighbouring
+  // room looking into their own, so the neighbour's volume landed between them
+  // and their room, and its label projected from behind the camera into the
+  // middle of their shot. The passage frames still name what is next door.
+  if (posted) return null;
+
   const b = room.bounds;
   const cx = (b.minX + b.maxX) / 2;
   const cz = (b.minZ + b.maxZ) / 2;
@@ -259,42 +267,16 @@ function RoomFog({ room }: { room: RoomDef }) {
 
   return (
     <group>
-      {/* A posted spectator already has nothing rendered inside the rooms they
-          were not given, so a full-height volume would only be a grey cloud
-          hanging in their shot. Shade the floor instead: the room reads as
-          sealed and the sightline into their own room stays clean. Solo play
-          keeps the tall block, because there the contents really are mounted
-          and the volume is what hides them. */}
-      {posted ? (
-        <mesh position={[cx, 0.06, cz]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[w, d]} />
-          <meshBasicMaterial
-            ref={mat}
-            color="#141a23"
-            transparent
-            opacity={0.94}
-            depthWrite={false}
-          />
-        </mesh>
-      ) : (
-        <mesh position={[cx, ROOM_H / 2 - 0.1, cz]}>
-          <boxGeometry args={[w, ROOM_H - 0.2, d]} />
-          <meshBasicMaterial
-            ref={mat}
-            color="#1a212b"
-            transparent
-            opacity={0.94}
-          />
-        </mesh>
-      )}
-      {!explored && (
-        <Label
-          position={[cx, posted ? 0.5 : 2.1, cz]}
-          color="#6b7787"
-          text={room.name.toUpperCase()}
-          sub={posted ? "not your room" : "unexplored - follow the thief in"}
-        />
-      )}
+      <mesh position={[cx, ROOM_H / 2 - 0.1, cz]}>
+        <boxGeometry args={[w, ROOM_H - 0.2, d]} />
+        <meshBasicMaterial ref={mat} color="#1a212b" transparent opacity={0.94} />
+      </mesh>
+      <Label
+        position={[cx, 2.1, cz]}
+        color="#6b7787"
+        text={room.name.toUpperCase()}
+        sub="unexplored - follow the thief in"
+      />
     </group>
   );
 }

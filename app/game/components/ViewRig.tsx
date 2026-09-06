@@ -164,6 +164,12 @@ function SpectatorRig({ active }: { active: boolean }) {
     } else {
       want.current.pos.set(...r.cam.pos);
     }
+    // a posted spectator never turns the camera, so there is nothing to ease:
+    // put the aim on the room at once and let only the position slide
+    if (posted && orbit.current) {
+      orbit.current.target.copy(want.current.target);
+      orbit.current.update();
+    }
     following.current = true;
   }, [room, posted, fitted]);
 
@@ -185,8 +191,16 @@ function SpectatorRig({ active }: { active: boolean }) {
     } else {
       cam.current.lookAt(want.current.target);
     }
-    if (cam.current.position.distanceTo(want.current.pos) < 0.05)
-      following.current = false;
+    // Where the camera is aimed matters as much as where it stands, and the two
+    // converge at different speeds. Stopping on the position alone froze the
+    // aim wherever it had got to - which left the side rooms staring at the
+    // floor instead of down the room, while the lobby looked fine only because
+    // its target is a metre from the origin the aim was still sat on.
+    const arrived =
+      cam.current.position.distanceTo(want.current.pos) < 0.05 &&
+      (!orbit.current ||
+        orbit.current.target.distanceTo(want.current.target) < 0.05);
+    if (arrived) following.current = false;
   });
 
   return (

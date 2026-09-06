@@ -38,11 +38,14 @@ export interface RoomDef {
    * makes a callout mean anything: the spectator's screen-right is the thief's
    * right, so "LEFT" is the same left for both of them.
    *
-   * Two rules when touching these. Keep `pos` and `target` on the door's axis -
-   * any yaw between them twists that mapping. And keep them far enough back to
-   * hold all four corners of the room at a 45 degree vertical fov, including
-   * the near wall the thief comes through: all three sit ~22-24 units out at
-   * about 54 degrees, which fits the room at 16:9 and at 4:3.
+   * All three are the same shot, 14 back and 19.3 up - about 54 degrees, 24
+   * units out - so a spectator moved between rooms is not re-learning the view.
+   *
+   * Two rules when touching these. `pos` and `target` must share the axis the
+   * thief walks along (equal z for the side rooms, equal x for the lobby): any
+   * yaw between them twists left and right apart. And `target` is the *centre
+   * of the room*, not the doorway - aiming at the door instead pushes the room
+   * a fifth of a frame off-centre and leaves dead space down one side.
    */
   cam: { pos: Vec3; target: Vec3 };
 }
@@ -86,7 +89,7 @@ export const ROOMS: RoomDef[] = [
     fog: true,
     floor: "#7b7770",
     // entered from the entrance hall, due south
-    cam: { pos: [0, 18.5, 13], target: [0, 0.6, 0] },
+    cam: { pos: [0, 19.9, 14], target: [0, 0.6, 0] },
   },
   {
     id: "wcorr",
@@ -113,8 +116,8 @@ export const ROOMS: RoomDef[] = [
     bounds: { minX: -22, maxX: -8, minZ: -7, maxZ: 7 },
     fog: true,
     floor: "#78746d",
-    // door is in the east wall (x = -8, z = 2.5): look west, the way they walk
-    cam: { pos: [-1, 20, 2.5], target: [-15, 0.6, 2.5] },
+    // door is in the east wall: look west, the way the thief walks in
+    cam: { pos: [-1, 19.9, 0], target: [-15, 0.6, 0] },
   },
   {
     id: "vault",
@@ -123,8 +126,8 @@ export const ROOMS: RoomDef[] = [
     bounds: { minX: 8, maxX: 22, minZ: -7, maxZ: 7 },
     fog: true,
     floor: "#78746d",
-    // entered through the west wall (x = 8, z = 2.5): look east, the way they walk
-    cam: { pos: [1, 20, 2.5], target: [15, 0.6, 2.5] },
+    // entered through the west wall: look east, the way the thief walks in
+    cam: { pos: [1, 19.9, 0], target: [15, 0.6, 0] },
   },
   {
     id: "annex",
