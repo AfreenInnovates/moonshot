@@ -64,6 +64,7 @@ export interface Snapshot {
   keycard: boolean;
   codeFound: boolean;
   vaultOpen: boolean;
+  ventOpen: boolean;
   alarmDisabled: boolean;
   escaped: boolean;
   down: boolean;

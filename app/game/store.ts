@@ -16,7 +16,21 @@ export type ViewMode = "thief" | "spectator" | "discovery";
 export type GameMode =
   | { kind: "solo" }
   | { kind: "thief" }
-  | { kind: "spectator"; watching: RoomId };
+  | {
+      kind: "spectator";
+      watching: RoomId;
+      /**
+       * The only spectator in the run follows the thief from room to room
+       * instead of being posted to one.
+       *
+       * A crew of one cannot cover the building, and the run has a hard
+       * dependency on the security room: the vault code is written on a note
+       * only a spectator can read. Pinning a lone spectator to the lobby left
+       * that note unreachable and the vault permanently shut, so a two-player
+       * game could never actually be finished.
+       */
+      roam?: boolean;
+    };
 
 export const VIEWS: {
   id: ViewMode;
@@ -82,7 +96,11 @@ export interface GameState {
   alarmDisabled: boolean;
   codeFound: boolean;
   vaultOpen: boolean;
+  /** the keypad has released the extraction vent */
+  ventOpen: boolean;
   escaped: boolean;
+  /** how the run ended, for the win card */
+  escapedVia: "entrance" | "vent" | null;
   loot: number;
   score: number;
   prompt: string | null;
@@ -106,7 +124,9 @@ export interface GameState {
   openDoor: (id: string) => void;
   disableAlarm: () => void;
   tryKeypad: () => void;
-  escape: () => void;
+  escape: (via?: "entrance" | "vent") => void;
+  /** Space pressed while standing in the extraction vent. */
+  ventExit: () => void;
   push: (text: string, tone?: LogEntry["tone"]) => void;
   receiveCommand: (code: CommandCode, by: string, at?: number) => void;
   reset: () => void;
@@ -132,7 +152,9 @@ const initial = {
   alarmDisabled: false,
   codeFound: false,
   vaultOpen: false,
+  ventOpen: false,
   escaped: false,
+  escapedVia: null as "entrance" | "vent" | null,
   loot: 0,
   score: 0,
   prompt: null as string | null,
@@ -254,21 +276,61 @@ export const useGame = create<GameState>()((set, get) => ({
     get().push("Alarm panel disabled. Cameras are blind now.", "good");
   },
 
+  /**
+   * The keypad by the round door, and the one step that opens the way out.
+   *
+   * It takes the keycard from the security room, or the 4-digit code if the
+   * crew read the note - either is enough. Accepting it swings the vault open
+   * *and* releases the extraction vent, so a thief who got this far always has
+   * an exit rather than a locked room and no way to finish.
+   */
   tryKeypad: () => {
     const s = get();
     if (s.vaultOpen) return;
-    if (s.codeFound) {
-      set({ vaultOpen: true, score: s.score + 250 });
-      s.push("Keypad accepted 4-7-1-2. The vault is open.", "good");
-    } else {
-      s.push("Keypad locked. The code is written down somewhere.", "bad");
+    if (!s.keycard && !s.codeFound) {
+      s.push(
+        "Keypad is locked. Bring the keycard from the security room.",
+        "bad",
+      );
+      return;
     }
+    set({ vaultOpen: true, ventOpen: true, score: s.score + 250 });
+    s.push(
+      s.codeFound
+        ? "Keypad accepted 4-7-1-2. Vault open, extraction vent released."
+        : "Keycard accepted. Vault open, extraction vent released.",
+      "good",
+    );
+    s.push("The vent on the east wall is your way out.", "info");
   },
 
-  escape: () => {
-    if (get().escaped) return;
-    set((s) => ({ escaped: true, score: s.score + 500 }));
-    get().push("Out of the building with the loot. Run complete.", "good");
+  escape: (via = "entrance") => {
+    const s = get();
+    if (s.escaped) return;
+    const withLoot = !!s.collected["vault-loot"];
+    set({ escaped: true, escapedVia: via, score: s.score + (withLoot ? 500 : 200) });
+    get().push(
+      via === "vent"
+        ? withLoot
+          ? "Into the vent with the vault contents. Clean getaway."
+          : "Into the vent and out of the building. You got out."
+        : "Out of the building with the loot. Run complete.",
+      "good",
+    );
+  },
+
+  /**
+   * The extraction vent is the way this run ends.
+   *
+   * There is deliberately no "come back when you have the loot" gate here. The
+   * hatch only exists once a spectator has found it, so getting to this point
+   * already took the crew - and a hidden exit the thief cannot use is just a
+   * wall. Clearing the vault on the way out is worth more, not required.
+   */
+  ventExit: () => {
+    const s = get();
+    if (s.escaped || s.hp <= 0) return;
+    s.escape("vent");
   },
 
   reset: () => {
@@ -307,6 +369,7 @@ export const useGame = create<GameState>()((set, get) => ({
       keycard: snap.keycard,
       codeFound: snap.codeFound,
       vaultOpen: snap.vaultOpen,
+      ventOpen: snap.ventOpen,
       alarmDisabled: snap.alarmDisabled,
       escaped: snap.escaped,
       loot: snap.loot,
@@ -324,9 +387,15 @@ export const useGame = create<GameState>()((set, get) => ({
 export function useRoomVisible(room: RoomId): boolean {
   const mode = useGame((s) => s.mode);
   const explored = useGame((s) => !!s.explored[room]);
-  if (mode.kind === "spectator") return mode.watching === room;
+  // a posted spectator sees one room; a roaming one sees wherever the thief
+  // has been, the same rule solo play uses
+  if (mode.kind === "spectator" && !mode.roam) return mode.watching === room;
   return explored;
 }
+
+/** The room a spectator is currently looking at, posted or roaming. */
+export const watchedRoom = (mode: GameMode, thiefRoom: RoomId): RoomId | null =>
+  mode.kind !== "spectator" ? null : mode.roam ? thiefRoom : mode.watching;
 
 /** This client owns the simulation (thief input, guards, detection). */
 export const useIsHost = () =>
