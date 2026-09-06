@@ -30,6 +30,10 @@
   box-sizing: border-box;
 }
 
+html {
+  min-height: 100%;
+}
+
 ::selection {
   background: var(--acid);
   color: var(--ink);
@@ -39,6 +43,8 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  min-height: 100dvh;
+  overscroll-behavior: none;
 }
 
 button,
@@ -52,6 +58,12 @@ a,
 select,
 input {
   -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+select {
+  touch-action: manipulation;
 }
 
 .brutal-grid {
@@ -152,6 +164,100 @@ input {
 
 .signal-pulse {
   animation: signal-pulse 1.8s ease-in-out infinite;
+}
+
+.game-shell {
+  min-height: 100dvh;
+}
+
+.mobile-joystick {
+  position: fixed;
+  left: max(1rem, env(safe-area-inset-left));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  touch-action: none;
+  user-select: none;
+}
+
+.game-top-bar {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+}
+
+.game-bottom-bar {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+}
+
+@media (max-width: 639px) {
+  /* ── top bar ── */
+  .game-top-bar {
+    padding: max(0.5rem, env(safe-area-inset-top)) 0.5rem 0 0.5rem;
+    gap: 0.25rem;
+  }
+  .game-top-bar-subtitle {
+    display: none;
+  }
+  .game-top-bar-viewpanel {
+    display: none;
+  }
+
+  /* ── minimap ── */
+  .game-minimap {
+    transform: scale(0.65);
+    transform-origin: top right;
+    margin-bottom: -3rem;  /* reclaim the space lost to scaling */
+  }
+  .game-minimap-legend {
+    display: none;
+  }
+
+  /* ── right column (log / discovery) ── */
+  .game-right-col {
+    display: none;
+  }
+
+  /* ── bottom bar ── */
+  .game-bottom-bar-thief {
+    bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+
+  .game-stats-panel {
+    padding: 0.35rem 0.5rem;
+    gap: 0.35rem;
+  }
+
+  .game-stats-thief {
+    max-height: min(7rem, 28dvh);
+    overflow-y: auto;
+  }
+
+  .game-stats-objective {
+    display: none;
+  }
+
+  .game-stats-room-blurb {
+    display: none;
+  }
+
+  .game-help-panel {
+    display: none;
+  }
+
+  /* ── spectator command deck ── */
+  .game-command-deck {
+    bottom: calc(8.5rem + env(safe-area-inset-bottom));
+    width: calc(100vw - 1.5rem);
+  }
+
+  /* ── joystick ── */
+  .mobile-joystick {
+    z-index: 40;
+  }
+  .mobile-action-controls {
+    z-index: 40;
+  }
 }
 
 @keyframes signal-pulse {

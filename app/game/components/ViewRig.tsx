@@ -217,10 +217,11 @@ function SpectatorRig({ active }: { active: boolean }) {
         <OrbitControls
           ref={orbit}
           makeDefault
-          /* posted spectators get a fixed frame: zoom only, so the room never
-             turns under them and the thief's heading stays readable */
-          enableRotate={!posted}
-          enablePan={!posted}
+           /* posted spectators get a fixed frame: no touch or cursor camera
+              movement, so the room never turns under them */
+           enabled={!posted}
+           enableRotate={!posted}
+           enablePan={!posted}
           /* the posted framing already starts wide enough to see the whole
              room and the door the thief comes through; this is only headroom
              to lean in or pull further back, measured off that fitted distance

@@ -11,6 +11,11 @@ import {
 import * as THREE from "three";
 import { roomAt, THIEF_SPAWN } from "../level";
 import { clampDt, runtime } from "../runtime";
+import {
+  consumeVirtualUse,
+  getVirtualMove,
+  getVirtualSprint,
+} from "../input";
 import { useGame, useIsHost } from "../store";
 import { Label, NeonBox } from "./Markers";
 
@@ -20,6 +25,15 @@ const WALK = 3.6;
 const RUN = 5.8;
 /** eye offset from the capsule centre (centre sits 0.85 above the floor) */
 const EYE = 0.8;
+
+function activateUseTarget(
+  tryKeypad: () => void,
+  disableAlarm: () => void,
+) {
+  const target = runtime.useTarget;
+  if (target?.kind === "keypad") tryKeypad();
+  else if (target?.kind === "alarm") disableAlarm();
+}
 
 /** The blocky figure, shared by the local and the streamed thief. */
 function ThiefFigure({ invisible }: { invisible?: boolean }) {
@@ -103,9 +117,7 @@ function LocalThief() {
         (s) => s.use,
         (pressed) => {
           if (!pressed) return;
-          const t = runtime.useTarget;
-          if (t?.kind === "keypad") tryKeypad();
-          else if (t?.kind === "alarm") disableAlarm();
+          activateUseTarget(tryKeypad, disableAlarm);
         },
       ),
     [sub, tryKeypad, disableAlarm],
@@ -132,8 +144,17 @@ function LocalThief() {
     runtime.room = roomAt(t.x, t.z);
 
     const down = hp > 0 ? get() : ({} as Record<Controls, boolean>);
-    const f = (down.forward ? 1 : 0) - (down.back ? 1 : 0);
-    const r = (down.right ? 1 : 0) - (down.left ? 1 : 0);
+    if (hp > 0 && consumeVirtualUse())
+      activateUseTarget(tryKeypad, disableAlarm);
+    const virtual = getVirtualMove();
+    const f = Math.max(
+      -1,
+      Math.min(1, (down.forward ? 1 : 0) - (down.back ? 1 : 0) + virtual.y),
+    );
+    const r = Math.max(
+      -1,
+      Math.min(1, (down.right ? 1 : 0) - (down.left ? 1 : 0) + virtual.x),
+    );
 
     const cam = state.camera;
     const fwd = new THREE.Vector3();
@@ -152,7 +173,7 @@ function LocalThief() {
     const moving = move.lengthSq() > 0;
     if (moving) move.normalize();
 
-    const speed = down.sprint ? RUN : WALK;
+    const speed = down.sprint || getVirtualSprint() ? RUN : WALK;
     const v = rb.linvel();
     rb.setLinvel({ x: move.x * speed, y: v.y, z: move.z * speed }, true);
 

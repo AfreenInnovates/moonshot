@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -18,13 +18,20 @@ export const metadata: Metadata = {
     "A real-time asymmetric multiplayer heist. One player can\u2019t see the whole picture. Your crew sees the facility, guides the thief, and finds the way out.",
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#111216",
+};
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="flex h-full min-h-0 flex-col overflow-hidden">{children}</body>
+      <body className="flex h-[100dvh] flex-col overflow-hidden">{children}</body>
     </html>
   );
 }

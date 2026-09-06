@@ -34,7 +34,7 @@ export default function GameCanvas() {
         shadows="soft"
         dpr={[1, 1.5]}
         gl={{ antialias: true, powerPreference: "high-performance" }}
-        style={{ position: "absolute", inset: 0 }}
+        style={{ position: "absolute", inset: 0, touchAction: "none" }}
       >
         <Suspense fallback={null}>
           <ViewRig />

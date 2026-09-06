@@ -93,8 +93,9 @@ export type NetMessage =
   | ({ type: "voice" } & VoiceTransmission)
   | { type: "bye"; id: string };
 
-export type JoinFailure = "notfound" | "full" | "unavailable";
+export type JoinFailure = "notfound" | "full" | "unavailable" | "error";
 export type StartFailure = "notfound" | "not-host" | "not-ready" | "started";
+export type NetConnectionState = "connected" | "reconnecting";
 export type StartResult =
   | { ok: true }
   | { ok: false; error: StartFailure };
@@ -119,6 +120,7 @@ export interface NetClient {
   /** fan-out only: world snapshots and scans */
   send(msg: NetMessage): void;
   onMessage(cb: (m: NetMessage) => void): () => void;
+  onConnection(cb: (state: NetConnectionState) => void): () => void;
 }
 
 export const newCode = () => {

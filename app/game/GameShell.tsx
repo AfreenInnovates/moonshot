@@ -10,6 +10,7 @@ import { clearVoiceQueue, enqueueVoice, playNarrationOnce, playSignal } from "./
 import { CAMERAS, commandChannel, MARKERS, roomById } from "./level";
 import { resolveRoom, useSession } from "./session";
 import { useGame, VIEWS, type ViewMode } from "./store";
+import MobileControls from "./MobileControls";
 import mascot from "../../ChatGPT Image Sep 6, 2026, 12_03_22 AM.png";
 import PuzzleModal from "./PuzzleModal";
 
@@ -271,7 +272,7 @@ function CommandDeck() {
               setSent(command.code);
               window.setTimeout(() => setSent((current) => (current === command.code ? null : current)), 900);
             }}
-            className="min-w-[4.2rem] flex-1 border border-white/20 bg-white/[0.04] px-1.5 py-1.5 text-center transition enabled:hover:bg-white/10 enabled:active:translate-x-0.5 enabled:active:translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-30"
+             className="min-h-12 min-w-[4.8rem] flex-1 border border-white/20 bg-white/[0.04] px-2 py-2 text-center transition enabled:hover:bg-white/10 enabled:active:translate-x-0.5 enabled:active:translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-30"
             style={{ borderLeftColor: command.color, borderLeftWidth: 3 }}
           >
             <span className="block font-mono text-[10px] font-black" style={{ color: command.color }}>
@@ -292,14 +293,14 @@ function CommandDeck() {
           <button
             disabled={intelPoints < 50}
             onClick={() => { spendIntel(50); sendPowerUp("heal"); playSignal("command"); }}
-            className="border border-white/20 bg-white/5 px-2 py-1 text-[9px] font-black uppercase text-emerald-400 disabled:opacity-30 hover:bg-white/10"
+             className="min-h-11 border border-white/20 bg-white/5 px-3 py-2 text-[9px] font-black uppercase text-emerald-400 disabled:opacity-30 hover:bg-white/10"
           >
             Heal (50 IP)
           </button>
           <button
             disabled={intelPoints < 50}
             onClick={() => { spendIntel(50); sendPowerUp("invis"); playSignal("command"); }}
-            className="border border-white/20 bg-white/5 px-2 py-1 text-[9px] font-black uppercase text-[#e9ff4f] disabled:opacity-30 hover:bg-white/10"
+             className="min-h-11 border border-white/20 bg-white/5 px-3 py-2 text-[9px] font-black uppercase text-[#e9ff4f] disabled:opacity-30 hover:bg-white/10"
           >
             Invis 10s (50 IP)
           </button>
@@ -449,8 +450,8 @@ function Onboarding() {
             <h3 className="text-[10px] font-black uppercase tracking-widest text-[#ffd23b]">Controls</h3>
             <p className="mt-2">
               {mode.kind === "spectator"
-                ? "Your room is drawn from one fixed angle so directions always match. Scroll to zoom, and use Watch / Discover to inspect it."
-                : "WASD moves, Shift runs, E interacts, and click captures the mouse for looking around."}
+                 ? "Your room is drawn from one fixed angle so directions always match. Use Watch / Discover to inspect it."
+                 : "WASD moves, Shift runs, E interacts, and click captures the mouse for looking around. On touch screens, use the joystick."}
             </p>
           </div>
           <div className="border-l-2 border-[#ff6b73] pl-3">
@@ -463,6 +464,23 @@ function Onboarding() {
           Understood - enter the run
         </button>
       </section>
+    </div>
+  );
+}
+
+function ConnectionBanner() {
+  const connectionState = useSession((s) => s.connectionState);
+  if (connectionState === "connected") return null;
+  const restored = connectionState === "reconnected";
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-[calc(4.5rem+env(safe-area-inset-top))] z-20 flex justify-center px-3">
+      <div
+        className={`pointer-events-auto border-2 px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest shadow-[3px_3px_0_rgba(0,0,0,0.5)] ${restored ? "border-[#39ff88] bg-[#111216]/95 text-[#39ff88]" : "border-[#ffb347] bg-[#111216]/95 text-[#ffb347]"}`}
+        role="status"
+        aria-live="polite"
+      >
+        {restored ? "Connection restored" : "Connection lost - reconnecting..."}
+      </div>
     </div>
   );
 }
@@ -562,35 +580,36 @@ export default function GameShell({ title }: { title?: string }) {
           : "Walk in through the main entrance.";
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-[#06080c] text-zinc-100">
-      <GameCanvas />
-      <DangerBanner />
+    <div className="game-shell absolute inset-0 overflow-hidden bg-[#06080c] text-zinc-100">
+       <GameCanvas />
+       <ConnectionBanner />
+       <DangerBanner />
       <CommandTransmission />
 
       {/* top bar */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3 sm:gap-4 sm:p-4">
+       <div className="game-top-bar pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3 sm:gap-4 sm:p-4">
         <div className="pointer-events-auto flex max-w-[min(32rem,calc(100vw-1.5rem))] flex-col gap-3">
           <div>
-            <h1 className="text-sm font-bold uppercase tracking-[0.2em] text-zinc-200">
+            <h1 className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-200 sm:text-sm">
               {title ?? "Facility heist"}
             </h1>
-            <p className="text-[11px] text-zinc-500">
-              {spectator
-                ? `You are posted to the ${roomById(mode.watching).name}. You see what the thief cannot - tell them.`
-                : mode.kind === "thief"
-                  ? "You are the thief. You cannot see cameras, traps or guards' cones - your spectators can."
-                  : "Solo sandbox: you drive the thief and can look through all three layers."}
+            <p className="game-top-bar-subtitle text-[11px] text-zinc-500">
+               {spectator
+                 ? "You're a Spectator. Watch your sector. Guide the Thief."
+                 : mode.kind === "thief"
+                   ? "You're the Thief. Move through the facility. Listen to your crew."
+                   : "Solo sandbox: you drive the thief and can look through all three layers."}
             </p>
           </div>
           {!spectator && (
-            <div className="hud-panel px-3 py-2" style={{ borderColor: `${v.color}66` }}>
+            <div className="game-top-bar-viewpanel hud-panel px-3 py-2" style={{ borderColor: `${v.color}66` }}>
               <div className="text-sm font-bold uppercase tracking-wide" style={{ color: v.color }}>{`${v.n}. ${v.title}`}</div>
               <div className="mt-0.5 text-[11px] leading-snug text-zinc-400">{v.blurb}</div>
             </div>
           )}
         </div>
 
-      <div className="pointer-events-auto flex flex-col items-end gap-2">
+        <div className="pointer-events-auto flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
             {solo && (
               <select
@@ -611,7 +630,7 @@ export default function GameShell({ title }: { title?: string }) {
                   <button
                     key={id}
                     onClick={() => setView(id)}
-                    className={`px-3 py-2 text-[11px] uppercase tracking-widest ${
+                     className={`min-h-11 px-3 py-2 text-[11px] uppercase tracking-widest ${
                       view === id
                         ? "bg-[#e9ff4f] text-[#111216]"
                         : "bg-zinc-950/90 text-zinc-400 hover:bg-white/10"
@@ -625,7 +644,7 @@ export default function GameShell({ title }: { title?: string }) {
             {solo && (
               <button
                 onClick={reset}
-                className="border-2 border-white/30 bg-zinc-950/90 px-3 py-2 text-[10px] uppercase tracking-widest text-zinc-300 hover:bg-white/10"
+                 className="min-h-11 border-2 border-white/30 bg-zinc-950/90 px-3 py-2 text-[10px] uppercase tracking-widest text-zinc-300 hover:bg-white/10"
               >
                 Reset
               </button>
@@ -636,7 +655,7 @@ export default function GameShell({ title }: { title?: string }) {
                   leave();
                   router.push("/rooms");
                 }}
-                className="border-2 border-white/30 bg-zinc-950/90 px-3 py-2 text-[10px] uppercase tracking-widest text-zinc-300 hover:bg-white/10"
+                 className="min-h-11 border-2 border-white/30 bg-zinc-950/90 px-3 py-2 text-[10px] uppercase tracking-widest text-zinc-300 hover:bg-white/10"
               >
                 Leave room
               </button>
@@ -647,7 +666,7 @@ export default function GameShell({ title }: { title?: string }) {
       </div>
 
       {/* right column */}
-      <div className="pointer-events-none absolute right-3 top-[14rem] flex max-w-[calc(100vw-1.5rem)] flex-col items-end gap-3 sm:right-4 sm:top-[15.5rem]">
+       <div className="game-right-col pointer-events-none absolute right-3 top-[14rem] flex max-w-[calc(100vw-1.5rem)] flex-col items-end gap-3 sm:right-4 sm:top-[15.5rem]">
         {view === "discovery" && (
           <div className="pointer-events-auto">
             <DiscoveryPanel />
@@ -657,21 +676,21 @@ export default function GameShell({ title }: { title?: string }) {
       </div>
 
       {spectator && (
-        <div className="pointer-events-auto absolute bottom-[8.5rem] left-1/2 z-10 -translate-x-1/2 sm:bottom-4">
-          <CommandDeck />
-        </div>
-      )}
+         <div className="game-command-deck pointer-events-auto absolute bottom-[8.5rem] left-1/2 z-10 -translate-x-1/2 sm:bottom-4">
+           <CommandDeck />
+         </div>
+       )}
 
-      {/* bottom bar */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-3 sm:gap-4 sm:p-4">
-        <div className="hud-panel flex max-w-full flex-col gap-3 p-3">
+       {/* bottom bar */}
+       <div className={`game-bottom-bar ${!spectator ? "game-bottom-bar-thief" : ""} pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-3 sm:gap-4 sm:p-4`}>
+         <div className={`game-stats-panel hud-panel flex max-w-full flex-col gap-3 p-3 ${!spectator ? "game-stats-thief" : ""}`}>
           <div className="flex flex-wrap items-center gap-2">
             <span className="border border-white/25 bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-widest text-zinc-300">
               {roomById(room).name}
             </span>
-            <span className="text-[10px] uppercase tracking-wide text-zinc-500">{roomById(room).blurb}</span>
+            <span className="game-stats-room-blurb text-[10px] uppercase tracking-wide text-zinc-500">{roomById(room).blurb}</span>
           </div>
-          <div className="mt-2 text-[11px] text-zinc-200">{objective}</div>
+          <div className="game-stats-objective mt-2 text-[11px] text-zinc-200">{objective}</div>
             <div className="flex flex-wrap gap-4 sm:gap-5">
             <Bar label="HP" value={hp} color="#5dffa8" danger={hp < 35} />
             <Bar
@@ -699,10 +718,10 @@ export default function GameShell({ title }: { title?: string }) {
           </div>
         </div>
 
-        <div className="hud-panel p-3 text-right text-[11px] leading-relaxed text-zinc-400">
+         <div className="game-help-panel hud-panel p-3 text-right text-[11px] leading-relaxed text-zinc-400">
           {spectator ? (
             <>
-              <div>fixed view · scroll to zoom</div>
+               <div>fixed view · room stays framed</div>
               <div>
                 <span className="text-zinc-200">Watch / Discover</span> switches
                 layer
@@ -712,14 +731,14 @@ export default function GameShell({ title }: { title?: string }) {
           ) : (
             <>
               <div>
-                <span className="text-zinc-200">WASD</span> move ·{" "}
+                 <span className="text-zinc-200">WASD / joystick</span> move ·{" "}
                 <span className="text-zinc-200">Shift</span> run ·{" "}
                 <span className="text-zinc-200">E</span> interact
               </div>
               <div>
-                {view === "thief"
-                  ? "click to capture the mouse · Esc releases"
-                  : "drag to orbit · scroll to zoom"}
+                 {view === "thief"
+                   ? "click to capture the mouse · Esc releases"
+                   : "drag to orbit · scroll to zoom"}
               </div>
               {mode.kind === "thief" && (
                 <div className="border-t border-white/10 pt-1 text-[#e9ff4f]">crew codes: LEFT · RIGHT · RUN · HIDE · STOP</div>
@@ -735,7 +754,7 @@ export default function GameShell({ title }: { title?: string }) {
       </div>
 
       {prompt && !spectator && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-36 flex justify-center px-3 sm:bottom-32">
+         <div className="pointer-events-none absolute inset-x-0 bottom-36 hidden justify-center px-3 sm:flex sm:bottom-32">
           <div className="border border-yellow-400/50 bg-black/90 px-3 py-1.5 text-center text-[11px] text-yellow-200 shadow-[3px_3px_0_rgba(0,0,0,0.45)]">
             {prompt}
           </div>
@@ -763,6 +782,12 @@ export default function GameShell({ title }: { title?: string }) {
           onCancel={() => setActivePuzzle(null)}
         />
       )}
+
+      <MobileControls
+        enabled={!spectator && view === "thief"}
+        showUse={!spectator && !!prompt}
+        prompt={prompt}
+      />
 
       <Onboarding />
       <EndCard />
