@@ -162,9 +162,14 @@ function Keycard() {
 
 /* --------------------------------------------------------------- wall vent */
 
-function Vent() {
-  const def = byId("sec-vent");
+function Vent({ id }: { id: string }) {
+  const def = byId(id);
   const [x, y, z] = def.position;
+  const { revealed } = useMarker(def);
+  // the extraction hatch is the one thing the thief is allowed to see for
+  // themselves - once the keypad has released it, they need to find the way out
+  const released = useGame((s) => s.ventOpen) && id === "vault-vent";
+  const lit = revealed || released;
   return (
     <group>
       <group position={[x, y, z]} rotation={[0, def.rotationY ?? 0, 0]}>
@@ -178,6 +183,18 @@ function Vent() {
             <meshStandardMaterial color="#4d4b47" />
           </mesh>
         ))}
+        {/* an open hatch glows, so the thief can see where they are aiming
+            even though the marker itself stays spectator-only */}
+        {lit && (
+          <mesh position={[0, 0, 0.05]}>
+            <planeGeometry args={[0.84, 0.54]} />
+            <meshBasicMaterial
+              color="#39ff88"
+              transparent
+              opacity={released ? 0.5 : 0.22}
+            />
+          </mesh>
+        )}
       </group>
       <MarkerOverlay def={def} size={[0.18, 0.72, 1.02]} />
     </group>
@@ -424,7 +441,8 @@ export default function Interactables() {
       <Keycard />
       <MedPickup id="health" heal={30} />
       <MedPickup id="bandages" heal={20} />
-      <Vent />
+      <Vent id="sec-vent" />
+      <Vent id="vault-vent" />
       <FloorTrap id="sec-trap" />
       <FloorTrap id="vault-trap" />
       <AlarmPanel />

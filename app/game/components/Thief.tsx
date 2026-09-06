@@ -10,14 +10,28 @@ import {
 } from "@react-three/rapier";
 import * as THREE from "three";
 import { roomAt, THIEF_SPAWN } from "../level";
+import { pressJump, pressUse } from "../controls";
 import { clampDt, runtime } from "../runtime";
 import { useGame, useIsHost } from "../store";
 import { Label, NeonBox } from "./Markers";
 
-export type Controls = "forward" | "back" | "left" | "right" | "sprint" | "use";
+export type Controls =
+  | "forward"
+  | "back"
+  | "left"
+  | "right"
+  | "sprint"
+  | "use"
+  | "jump";
 
 const WALK = 3.6;
 const RUN = 5.8;
+/** ~1.1m of clearance under the level's -18 gravity: a hop, not a moon jump. */
+const JUMP_V = 6.2;
+/** Standing on the floor puts the capsule centre here (0.5 half + 0.32 radius). */
+const GROUNDED_Y = 0.95;
+/** A jump pressed just before landing still counts, which stops it eating inputs. */
+const JUMP_BUFFER_MS = 160;
 /** eye offset from the capsule centre (centre sits 0.85 above the floor) */
 const EYE = 0.8;
 
@@ -92,23 +106,27 @@ function LocalThief() {
 
   const view = useGame((s) => s.view);
   const hp = useGame((s) => s.hp);
-  const tryKeypad = useGame((s) => s.tryKeypad);
-  const disableAlarm = useGame((s) => s.disableAlarm);
   const resetSeq = useGame((s) => s.resetSeq);
   const firstPerson = view === "thief";
 
+  // the on-screen buttons call the same two functions, so a thumb and a key
+  // press are the same action
   useEffect(
     () =>
       sub(
         (s) => s.use,
-        (pressed) => {
-          if (!pressed) return;
-          const t = runtime.useTarget;
-          if (t?.kind === "keypad") tryKeypad();
-          else if (t?.kind === "alarm") disableAlarm();
-        },
+        (pressed) => pressed && pressUse(),
       ),
-    [sub, tryKeypad, disableAlarm],
+    [sub],
+  );
+
+  useEffect(
+    () =>
+      sub(
+        (s) => s.jump,
+        (pressed) => pressed && pressJump(),
+      ),
+    [sub],
   );
 
   useEffect(() => {
@@ -132,8 +150,18 @@ function LocalThief() {
     runtime.room = roomAt(t.x, t.z);
 
     const down = hp > 0 ? get() : ({} as Record<Controls, boolean>);
-    const f = (down.forward ? 1 : 0) - (down.back ? 1 : 0);
-    const r = (down.right ? 1 : 0) - (down.left ? 1 : 0);
+    // keys and the on-screen stick add together, so either drives the thief
+    const stick = hp > 0 ? runtime.touchMove : { x: 0, y: 0 };
+    const f = THREE.MathUtils.clamp(
+      (down.forward ? 1 : 0) - (down.back ? 1 : 0) + stick.y,
+      -1,
+      1,
+    );
+    const r = THREE.MathUtils.clamp(
+      (down.right ? 1 : 0) - (down.left ? 1 : 0) + stick.x,
+      -1,
+      1,
+    );
 
     const cam = state.camera;
     const fwd = new THREE.Vector3();
@@ -149,12 +177,26 @@ function LocalThief() {
     const move = new THREE.Vector3()
       .addScaledVector(fwd, f)
       .addScaledVector(side, r);
-    const moving = move.lengthSq() > 0;
+    const moving = move.lengthSq() > 1e-4;
+    // a stick pushed halfway should walk, not sprint, so keep its magnitude
+    const throttle = Math.min(1, move.length());
     if (moving) move.normalize();
 
-    const speed = down.sprint ? RUN : WALK;
+    const speed = (down.sprint ? RUN : WALK) * (moving ? throttle : 0);
     const v = rb.linvel();
-    rb.setLinvel({ x: move.x * speed, y: v.y, z: move.z * speed }, true);
+    // the floor is flat everywhere the thief can walk, so resting height is a
+    // cheaper and steadier ground test than a per-frame raycast
+    const grounded = t.y <= GROUNDED_Y;
+    const wantsJump = performance.now() - runtime.jumpAt < JUMP_BUFFER_MS;
+    if (wantsJump && grounded && hp > 0) runtime.jumpAt = -1e9;
+    rb.setLinvel(
+      {
+        x: move.x * speed,
+        y: wantsJump && grounded && hp > 0 ? JUMP_V : v.y,
+        z: move.z * speed,
+      },
+      true,
+    );
 
     // in first person the thief faces wherever they are looking, and that is
     // the heading spectators steer by - a LEFT call has to mean the thief's
@@ -238,8 +280,10 @@ function RemoteThief() {
   const mode = useGame((s) => s.mode);
   const thiefRoom = useGame((s) => s.room);
   const hp = useGame((s) => s.hp);
+  // a roaming spectator follows the thief, so the thief is always in shot
+  const roam = mode.kind === "spectator" && !!mode.roam;
   const watching = mode.kind === "spectator" ? mode.watching : null;
-  const inMyRoom = watching !== null && thiefRoom === watching;
+  const inMyRoom = roam || (watching !== null && thiefRoom === watching);
 
   const [invisible, setInvisible] = useState(false);
   useFrame((_, rawDt) => {

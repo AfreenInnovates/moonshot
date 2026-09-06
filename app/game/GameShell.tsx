@@ -7,11 +7,13 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { COMMANDS, commandByCode, type CommandCode } from "./commands";
 import Minimap from "./components/Minimap";
 import { clearVoiceQueue, enqueueVoice, playNarrationOnce, playSignal } from "./audio";
-import { CAMERAS, commandChannel, MARKERS, roomById } from "./level";
+import { CAMERAS, channelOpen, commandChannel, MARKERS, roomById } from "./level";
 import { resolveRoom, useSession } from "./session";
-import { useGame, VIEWS, type ViewMode } from "./store";
+import { useGame, watchedRoom, VIEWS, type ViewMode } from "./store";
 import mascot from "../../ChatGPT Image Sep 6, 2026, 12_03_22 AM.png";
 import PuzzleModal from "./PuzzleModal";
+import TouchControls from "./components/TouchControls";
+import { useCoarsePointer } from "./useCoarsePointer";
 
 const GameCanvas = dynamic(() => import("./GameCanvas"), {
   ssr: false,
@@ -34,9 +36,12 @@ const HIDDEN = [...CAMERAS, ...MARKERS].filter((m) => m.reveal === "discovery");
  */
 function onLiveChannel(by: string) {
   const session = useSession.getState();
-  const sender = resolveRoom(session.room)?.players.find((p) => p.id === by);
-  if (!sender?.watching) return false;
-  return commandChannel(useGame.getState().room) === sender.watching;
+  const room = resolveRoom(session.room);
+  const sender = room?.players.find((p) => p.id === by);
+  if (!sender || sender.role !== "spectator") return false;
+  const sole =
+    (room?.players.filter((p) => p.role === "spectator").length ?? 0) <= 1;
+  return channelOpen(useGame.getState().room, sender.watching, sole);
 }
 const noSubscribe = () => () => {};
 const readOnboardingCompletion = () => {
@@ -81,15 +86,17 @@ function DiscoveryPanel() {
   const mode = useGame((s) => s.mode);
   const explored = useGame((s) => s.explored);
   const currentRoom = useGame((s) => s.room);
+  // a roaming spectator works the whole building, a posted one just their room
+  const roam = mode.kind === "spectator" && !!mode.roam;
   const mine =
-    mode.kind === "spectator"
+    mode.kind === "spectator" && !roam
       ? HIDDEN.filter((m) => m.room === mode.watching)
       : HIDDEN;
-  const room = mode.kind === "spectator" ? mode.watching : currentRoom;
+  const room = watchedRoom(mode, currentRoom) ?? currentRoom;
   const roomDef = roomById(room);
   const found = mine.filter((m) => discovered[m.id]).length;
   const canSee = (room: string) =>
-    mode.kind === "spectator"
+    mode.kind === "spectator" && !roam
       ? mode.watching === room
       : !!explored[room as keyof typeof explored];
 
@@ -223,21 +230,23 @@ function CommandDeck() {
   const sendPowerUp = useSession((s) => s.sendPowerUp);
   const intelPoints = useGame((s) => s.intelPoints);
   const spendIntel = useGame((s) => s.spendIntel);
-  const watching = useGame((s) => (s.mode.kind === "spectator" ? s.mode.watching : null));
+  const mode = useGame((s) => s.mode);
   const thiefRoom = useGame((s) => s.room);
+  const roam = mode.kind === "spectator" && !!mode.roam;
+  const watching = watchedRoom(mode, thiefRoom);
   const [sent, setSent] = useState<CommandCode | null>(null);
   const lastSent = useRef<{ code: CommandCode; at: number } | null>(null);
 
   // one spectator talks at a time: the one whose room the thief is standing in
   const holder = commandChannel(thiefRoom);
-  const live = watching !== null && holder === watching;
+  const live = channelOpen(thiefRoom, watching, roam);
   const offAir = holder
     ? `Thief is in the ${roomById(holder).name} - ${roomById(holder).name} is calling it.`
     : `Thief is in the ${roomById(thiefRoom).name}. Nobody has the channel until they reach a watched room.`;
 
   return (
     <div
-      className="hud-panel w-[min(38rem,calc(100vw-1.5rem))] p-2"
+      className="hud-panel w-full p-2 sm:w-[min(38rem,calc(100vw-1.5rem))]"
       style={{ borderLeftColor: live ? "#e9ff4f" : "#4b5563" }}
     >
       <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-1.5">
@@ -257,7 +266,7 @@ function CommandDeck() {
           {live ? "THIEF CHANNEL / LIVE" : "OFF AIR"}
         </span>
       </div>
-      <div className="mt-1.5 flex gap-1.5 overflow-x-auto">
+      <div className="mt-1.5 flex gap-1 overflow-x-auto sm:gap-1.5">
         {COMMANDS.map((command) => (
           <button
             key={command.code}
@@ -271,19 +280,21 @@ function CommandDeck() {
               setSent(command.code);
               window.setTimeout(() => setSent((current) => (current === command.code ? null : current)), 900);
             }}
-            className="min-w-[4.2rem] flex-1 border border-white/20 bg-white/[0.04] px-1.5 py-1.5 text-center transition enabled:hover:bg-white/10 enabled:active:translate-x-0.5 enabled:active:translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-30"
+            className="min-w-0 flex-1 touch-manipulation border border-white/20 bg-white/[0.04] px-0.5 py-2.5 text-center transition enabled:hover:bg-white/10 enabled:active:translate-x-0.5 enabled:active:translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-30 sm:min-w-[4.2rem] sm:px-1.5 sm:py-1.5"
             style={{ borderLeftColor: command.color, borderLeftWidth: 3 }}
           >
             <span className="block font-mono text-[10px] font-black" style={{ color: command.color }}>
               {sent === command.code ? "SENT" : command.code}
             </span>
-            <span className="mt-0.5 block truncate text-[8px] font-bold text-zinc-200">{command.label.replace("Move ", "").replace("Go ", "")}</span>
+            <span className="mt-0.5 hidden truncate text-[8px] font-bold text-zinc-200 sm:block">{command.label.replace("Move ", "").replace("Go ", "")}</span>
           </button>
         ))}
       </div>
       <div className="mt-1 text-[8px] uppercase tracking-widest text-zinc-600">
         {live
-          ? "Short callouts only. The thief is moving."
+          ? roam
+            ? "You are the whole crew - you follow the thief everywhere."
+            : "Short callouts only. The thief is moving."
           : `${offAir} You are back on the moment they walk into your room.`}
       </div>
       <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
@@ -341,28 +352,38 @@ function CommandTransmission() {
 
 function EndCard({ onReset }: { onReset?: () => void }) {
   const escaped = useGame((s) => s.escaped);
+  const via = useGame((s) => s.escapedVia);
   const hp = useGame((s) => s.hp);
   const score = useGame((s) => s.score);
+  const gotLoot = useGame((s) => !!s.collected["vault-loot"]);
   const solo = useGame((s) => s.mode.kind === "solo");
   const reset = useGame((s) => s.reset);
   if (!escaped && hp > 0) return null;
   return (
-    <div className="pointer-events-auto absolute inset-0 grid place-items-center bg-black/60 backdrop-blur-sm">
-      <div className="rounded-xl border border-white/15 bg-zinc-950/90 px-8 py-6 text-center">
+    <div className="pointer-events-auto absolute inset-0 grid place-items-center bg-black/70 p-4 backdrop-blur-sm">
+      <div className="w-[min(24rem,calc(100vw-2rem))] border-2 bg-[#0b0e13] px-6 py-6 text-center shadow-[6px_6px_0_rgba(0,0,0,0.6)]"
+        style={{ borderColor: escaped ? "#5dffa8" : "#ff6b73" }}
+      >
         <div
-          className="text-2xl font-bold tracking-wide"
+          className="text-3xl font-black uppercase tracking-[-0.03em]"
           style={{ color: escaped ? "#5dffa8" : "#ff6b73" }}
         >
-          {escaped ? "ESCAPED" : "THIEF DOWN"}
+          {escaped ? "You escaped" : "Thief down"}
         </div>
-        <div className="mt-1 text-xs text-zinc-400">Score {score}</div>
+        {escaped && (
+          <div className="mt-2 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-400">
+            {via === "vent" ? "Out through the extraction vent" : "Out through the entrance"}
+            {gotLoot ? " · vault emptied" : " · vault left behind"}
+          </div>
+        )}
+        <div className="mt-3 font-mono text-sm text-zinc-300">Score {score}</div>
         {solo && (
           <button
             onClick={() => {
               reset();
               onReset?.();
             }}
-            className="mt-4 rounded-md border border-white/20 px-4 py-1.5 text-xs uppercase tracking-widest text-zinc-200 hover:bg-white/10"
+            className="mt-5 w-full border-2 border-white/25 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-zinc-100 hover:bg-white/10"
           >
             Run it again
           </button>
@@ -450,7 +471,7 @@ function Onboarding() {
             <p className="mt-2">
               {mode.kind === "spectator"
                 ? "Your room is drawn from one fixed angle so directions always match. Scroll to zoom, and use Watch / Discover to inspect it."
-                : "WASD moves, Shift runs, E interacts, and click captures the mouse for looking around."}
+                : "WASD moves, Shift runs, Space jumps, E interacts, and click captures the mouse for looking around."}
             </p>
           </div>
           <div className="border-l-2 border-[#ff6b73] pl-3">
@@ -479,11 +500,13 @@ export default function GameShell({ title }: { title?: string }) {
   const prompt = useGame((s) => s.prompt);
   const codeFound = useGame((s) => s.codeFound);
   const keycard = useGame((s) => s.keycard);
-  const vaultOpen = useGame((s) => s.vaultOpen);
   const alarmDisabled = useGame((s) => s.alarmDisabled);
   const room = useGame((s) => s.room);
   const explored = useGame((s) => s.explored);
   const gotLoot = useGame((s) => !!s.collected["vault-loot"]);
+  const ventFound = useGame(
+    (s) => s.ventOpen || !!s.discovered["vault-vent"],
+  );
   const reset = useGame((s) => s.reset);
   const leave = useSession((s) => s.leave);
   const onCommand = useSession((s) => s.onCommand);
@@ -504,6 +527,9 @@ export default function GameShell({ title }: { title?: string }) {
 
   const solo = mode.kind === "solo";
   const spectator = mode.kind === "spectator";
+  const touch = useCoarsePointer();
+  // the thief drives the world, so they are the one who needs a stick
+  const showStick = touch && view === "thief";
   const v = VIEWS.find((x) => x.id === view)!;
 
   useEffect(() => {
@@ -551,52 +577,58 @@ export default function GameShell({ title }: { title?: string }) {
     };
   }, [mode.kind, onVoice]);
 
-  const objective = gotLoot
-    ? "Get back out through the entrance."
-    : vaultOpen
-      ? "Take the vault contents."
-      : keycard
-        ? "Vault room is unlocked - use the keypad by the round door (E)."
-        : explored.lobby
-          ? "Find the keycard in the security room (west door)."
-          : "Walk in through the main entrance.";
+  // The keycard opens the vault *room*; the vault itself takes a 4-digit code
+  // only a spectator can read. Spelling out which of the two is missing is the
+  // difference between a puzzle and a dead end.
+  // one line, one next step: keycard -> keypad -> vent -> out
+  const objective = ventFound
+    ? gotLoot
+      ? "Jump into the vent on the vault room's east wall (Space) to escape."
+      : "Vent is open. Take the vault contents, then jump into the vent (Space)."
+    : keycard
+      ? "Take the keycard to the keypad by the round door in the vault room (E)."
+      : explored.lobby
+        ? "Find the keycard in the security room (west door)."
+        : "Walk in through the main entrance.";
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-[#06080c] text-zinc-100">
+    <div className="game-surface absolute inset-0 overflow-hidden bg-[#06080c] text-zinc-100">
       <GameCanvas />
       <DangerBanner />
       <CommandTransmission />
 
       {/* top bar */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3 sm:gap-4 sm:p-4">
-        <div className="pointer-events-auto flex max-w-[min(32rem,calc(100vw-1.5rem))] flex-col gap-3">
+        <div className="pointer-events-auto flex min-w-0 max-w-[36vw] flex-col gap-3 sm:max-w-[min(32rem,calc(100vw-1.5rem))]">
           <div>
-            <h1 className="text-sm font-bold uppercase tracking-[0.2em] text-zinc-200">
+            <h1 className="text-[11px] font-bold uppercase leading-tight tracking-[0.12em] text-zinc-200 sm:text-sm sm:tracking-[0.2em]">
               {title ?? "Facility heist"}
             </h1>
-            <p className="text-[11px] text-zinc-500">
+            <p className="hidden text-[11px] text-zinc-500 sm:block">
               {spectator
-                ? `You are posted to the ${roomById(mode.watching).name}. You see what the thief cannot - tell them.`
+                ? mode.roam
+                  ? "You are the whole crew - you follow the thief room to room. You see what they cannot; tell them."
+                  : `You are posted to the ${roomById(mode.watching).name}. You see what the thief cannot - tell them.`
                 : mode.kind === "thief"
                   ? "You are the thief. You cannot see cameras, traps or guards' cones - your spectators can."
                   : "Solo sandbox: you drive the thief and can look through all three layers."}
             </p>
           </div>
           {!spectator && (
-            <div className="hud-panel px-3 py-2" style={{ borderColor: `${v.color}66` }}>
+            <div className="hud-panel hidden px-3 py-2 sm:block" style={{ borderColor: `${v.color}66` }}>
               <div className="text-sm font-bold uppercase tracking-wide" style={{ color: v.color }}>{`${v.n}. ${v.title}`}</div>
               <div className="mt-0.5 text-[11px] leading-snug text-zinc-400">{v.blurb}</div>
             </div>
           )}
         </div>
 
-      <div className="pointer-events-auto flex flex-col items-end gap-2">
-          <div className="flex items-center gap-2">
+      <div className="pointer-events-auto flex max-w-[62vw] flex-col items-end gap-2 sm:max-w-none">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {solo && (
               <select
                 value={view}
                 onChange={(e) => setView(e.target.value as ViewMode)}
-                className="border-2 border-white/30 bg-zinc-950/90 px-3 py-2 text-xs text-zinc-100 outline-none focus:border-yellow-300"
+                className="w-[7.5rem] border-2 border-white/30 bg-zinc-950/90 px-2 py-2 text-[11px] text-zinc-100 outline-none focus:border-yellow-300 sm:w-auto sm:px-3 sm:text-xs"
               >
                 {VIEWS.map((x) => (
                   <option key={x.id} value={x.id}>
@@ -647,7 +679,7 @@ export default function GameShell({ title }: { title?: string }) {
       </div>
 
       {/* right column */}
-      <div className="pointer-events-none absolute right-3 top-[14rem] flex max-w-[calc(100vw-1.5rem)] flex-col items-end gap-3 sm:right-4 sm:top-[15.5rem]">
+      <div className="pointer-events-none absolute right-2 top-[11rem] flex max-w-[calc(100vw-1rem)] flex-col items-end gap-3 sm:right-4 sm:top-[15.5rem]">
         {view === "discovery" && (
           <div className="pointer-events-auto">
             <DiscoveryPanel />
@@ -657,14 +689,24 @@ export default function GameShell({ title }: { title?: string }) {
       </div>
 
       {spectator && (
-        <div className="pointer-events-auto absolute bottom-[8.5rem] left-1/2 z-10 -translate-x-1/2 sm:bottom-4">
+        <div className="pointer-events-auto absolute inset-x-2 bottom-3 z-10 sm:inset-x-auto sm:bottom-4 sm:left-1/2 sm:-translate-x-1/2">
           <CommandDeck />
         </div>
       )}
 
       {/* bottom bar */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-3 sm:gap-4 sm:p-4">
-        <div className="hud-panel flex max-w-full flex-col gap-3 p-3">
+      <div
+        className={`pointer-events-none absolute inset-x-0 flex items-end justify-between gap-3 p-3 sm:gap-4 sm:p-4 ${
+          // clear whichever set of controls is on screen rather than sit under
+          // them: the thief's thumbs, or the spectator's command deck
+          showStick
+            ? "bottom-[178px] sm:bottom-0"
+            : spectator
+              ? "bottom-[9rem] sm:bottom-0"
+              : "bottom-0"
+        }`}
+      >
+        <div className="hud-panel flex max-w-[min(22rem,60vw)] flex-col gap-2 p-2 text-[10px] sm:max-w-full sm:gap-3 sm:p-3 sm:text-xs">
           <div className="flex flex-wrap items-center gap-2">
             <span className="border border-white/25 bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-widest text-zinc-300">
               {roomById(room).name}
@@ -699,7 +741,7 @@ export default function GameShell({ title }: { title?: string }) {
           </div>
         </div>
 
-        <div className="hud-panel p-3 text-right text-[11px] leading-relaxed text-zinc-400">
+        <div className="hud-panel hidden p-3 text-right text-[11px] leading-relaxed text-zinc-400 sm:block">
           {spectator ? (
             <>
               <div>fixed view · scroll to zoom</div>
@@ -714,6 +756,7 @@ export default function GameShell({ title }: { title?: string }) {
               <div>
                 <span className="text-zinc-200">WASD</span> move ·{" "}
                 <span className="text-zinc-200">Shift</span> run ·{" "}
+                <span className="text-zinc-200">Space</span> jump ·{" "}
                 <span className="text-zinc-200">E</span> interact
               </div>
               <div>
@@ -734,7 +777,7 @@ export default function GameShell({ title }: { title?: string }) {
         </div>
       </div>
 
-      {prompt && !spectator && (
+      {prompt && !spectator && !showStick && (
         <div className="pointer-events-none absolute inset-x-0 bottom-36 flex justify-center px-3 sm:bottom-32">
           <div className="border border-yellow-400/50 bg-black/90 px-3 py-1.5 text-center text-[11px] text-yellow-200 shadow-[3px_3px_0_rgba(0,0,0,0.45)]">
             {prompt}
@@ -742,7 +785,7 @@ export default function GameShell({ title }: { title?: string }) {
         </div>
       )}
 
-      {view === "thief" && (
+      {view === "thief" && !showStick && (
         <div className="pointer-events-none absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 border border-white/45">
           <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 bg-[#e9ff4f]" />
         </div>
@@ -763,6 +806,8 @@ export default function GameShell({ title }: { title?: string }) {
           onCancel={() => setActivePuzzle(null)}
         />
       )}
+
+      {showStick && <TouchControls />}
 
       <Onboarding />
       <EndCard />

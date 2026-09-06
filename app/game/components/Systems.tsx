@@ -21,6 +21,7 @@ const pos = (id: string) =>
 
 const keypadPos = pos("keypad");
 const alarmPos = pos("alarm");
+const ventPos = pos("vault-vent");
 
 const tmpDir = new THREE.Vector3();
 const tmpTo = new THREE.Vector3();
@@ -137,9 +138,13 @@ export default function Systems() {
       if (guardDist < 1.5) store.drain(8 * dt);
     }
 
-    /* --- what would E do right now ---------------------------------- */
+    /* --- what would E (or Space) do right now ------------------------ */
+    // released by the keypad, or found early by a spectator scanning for it
+    const ventFound = store.ventOpen || !!store.discovered["vault-vent"];
     let useTarget: typeof runtime.useTarget = null;
-    if (flat(runtime.thief, keypadPos) < 2.2 && !store.vaultOpen)
+    if (ventFound && flat(runtime.thief, ventPos) < 2.6)
+      useTarget = { kind: "vent", id: "vault-vent" };
+    else if (flat(runtime.thief, keypadPos) < 2.2 && !store.vaultOpen)
       useTarget = { kind: "keypad", id: "keypad" };
     else if (flat(runtime.thief, alarmPos) < 2.2 && !store.alarmDisabled)
       useTarget = { kind: "alarm", id: "alarm" };
@@ -167,19 +172,25 @@ export default function Systems() {
 
       const prompt = store.escaped
         ? null
-        : useTarget?.kind === "keypad"
-          ? store.codeFound
-            ? "Press E to enter the code"
-            : "Press E to try the keypad"
-          : useTarget?.kind === "alarm"
-            ? "Press E to disable the alarm panel"
-            : lockedNear
-              ? `${lockedNear} is locked - the keycard is in the security room`
-              : gotLoot
-                ? "Get out through the lobby entrance"
-                : store.vaultOpen
-                  ? "The vault is open - take what is inside"
-                  : null;
+        : useTarget?.kind === "vent"
+          ? gotLoot
+            ? "Press Space to jump into the vent - you have the loot"
+            : "Press Space to jump into the vent and get out"
+          : useTarget?.kind === "keypad"
+            ? store.keycard || store.codeFound
+              ? "Press E to use the keypad - it opens the vault and the vent"
+              : "Press E - the keypad needs the keycard from the security room"
+            : useTarget?.kind === "alarm"
+              ? "Press E to disable the alarm panel"
+              : lockedNear
+                ? `${lockedNear} is locked - the keycard is in the security room`
+                : ventFound
+                  ? gotLoot
+                    ? "Vent is open on the east wall - jump in (Space) to get out"
+                    : "Vault is open. Grab the contents, then jump into the vent on the east wall"
+                  : gotLoot
+                    ? "Get back out through the entrance"
+                    : null;
       store.setPrompt(prompt);
     }
   });

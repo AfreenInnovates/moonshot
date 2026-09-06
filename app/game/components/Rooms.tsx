@@ -117,7 +117,13 @@ function RoomContents({
   children: React.ReactNode;
 }) {
   const mode = useGame((s) => s.mode);
-  const visible = mode.kind !== "spectator" || mode.watching === room;
+  const explored = useGame((s) => !!s.explored[room]);
+  const visible =
+    mode.kind !== "spectator"
+      ? true
+      : mode.roam
+        ? explored
+        : mode.watching === room;
   return visible ? <group>{children}</group> : null;
 }
 

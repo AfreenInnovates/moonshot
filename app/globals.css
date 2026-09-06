@@ -176,3 +176,19 @@ input {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── touch play ──────────────────────────────────────────────────────────
+   A thumb dragging the look pad or the stick must move the thief, not pan
+   the page or fire the browser's pull-to-refresh. */
+html,
+body {
+  overscroll-behavior: none;
+}
+
+.game-surface {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}

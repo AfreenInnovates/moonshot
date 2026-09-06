@@ -5,8 +5,9 @@ import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { roomById, type RoomDef } from "../level";
-import { clampDt } from "../runtime";
+import { clampDt, runtime } from "../runtime";
 import { useGame } from "../store";
+import { useCoarsePointer } from "../useCoarsePointer";
 
 /** Corners of a room, at floor level and at head height. */
 function roomCorners(room: RoomDef) {
@@ -64,11 +65,28 @@ function fitDistance(room: RoomDef, aspect: number, fov: number) {
  * Mouse look for the thief. Uses pointer lock when the browser allows it and
  * falls back to click-drag when it does not (embedded frames, some previews).
  */
-function FirstPersonLook() {
+function FirstPersonLook({ touch }: { touch: boolean }) {
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
 
+  // a finger drives the look through the on-screen pad, drained here each frame
+  useFrame(() => {
+    if (!touch) return;
+    const { dx, dy } = runtime.touchLook;
+    if (dx === 0 && dy === 0) return;
+    runtime.touchLook.dx = 0;
+    runtime.touchLook.dy = 0;
+    const euler = new THREE.Euler(0, 0, 0, "YXZ");
+    euler.setFromQuaternion(camera.quaternion);
+    euler.y -= dx * 0.0042;
+    euler.x = THREE.MathUtils.clamp(euler.x - dy * 0.0042, -1.35, 1.35);
+    camera.quaternion.setFromEuler(euler);
+  });
+
   useEffect(() => {
+    // pointer lock is a desktop idea; on a phone the synthesised mouse events
+    // would fight the look pad
+    if (touch) return;
     const el = gl.domElement;
     const euler = new THREE.Euler(0, 0, 0, "YXZ");
     let dragging = false;
@@ -107,7 +125,7 @@ function FirstPersonLook() {
       window.removeEventListener("mouseup", onUp);
       if (document.pointerLockElement === el) document.exitPointerLock();
     };
-  }, [gl, camera]);
+  }, [gl, camera, touch]);
 
   return null;
 }
@@ -127,8 +145,11 @@ const FOV = 45;
 function SpectatorRig({ active }: { active: boolean }) {
   const mode = useGame((s) => s.mode);
   const thiefRoom = useGame((s) => s.room);
-  // a posted spectator stays on their own room; solo follows the thief around
-  const room = mode.kind === "spectator" ? mode.watching : thiefRoom;
+  // a posted spectator stays on their own room; a roaming one and solo play
+  // both follow the thief around
+  const room =
+    mode.kind === "spectator" && !mode.roam ? mode.watching : thiefRoom;
+  // either way a spectator's framing is bolted down - only solo may turn it
   const posted = mode.kind === "spectator";
   // re-fit when the window changes shape, so a resize never crops the room
   const aspect = useThree((s) => s.viewport.aspect);
@@ -247,6 +268,7 @@ function SpectatorRig({ active }: { active: boolean }) {
  */
 export default function ViewRig() {
   const view = useGame((s) => s.view);
+  const touch = useCoarsePointer();
   const first = view === "thief";
 
   return (
@@ -255,7 +277,7 @@ export default function ViewRig() {
 
       {/* thief: eyes inside the character, driven by Thief.tsx */}
       <PerspectiveCamera makeDefault={first} fov={74} near={0.06} far={400} />
-      {first && <FirstPersonLook key="fps" />}
+      {first && <FirstPersonLook key="fps" touch={touch} />}
 
       <SpectatorRig active={!first} />
 

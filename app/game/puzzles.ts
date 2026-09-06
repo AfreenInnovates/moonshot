@@ -104,11 +104,11 @@ const BANK: Record<string, Entry> = {
     wrong: ["Leave them", "Break them"],
     hint: "Loose valuables in the vault room.",
   },
-  "vault-vent-override": {
-    question: "The override switch opens the vent from this side. What does that give the thief?",
-    answer: "A way back out",
-    wrong: ["More health", "A louder alarm"],
-    hint: "Vent override. It unlocks a second route.",
+  "vault-vent": {
+    question: "This vent goes straight out of the building. What is it for?",
+    answer: "Getting the thief out",
+    wrong: ["Storing the loot", "Calling a guard"],
+    hint: "Extraction vent. Find it and the thief can escape through it.",
   },
   "vault-deposit-box": {
     question: "The deposit box is numbered one higher than 41. Which box is it?",

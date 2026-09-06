@@ -31,7 +31,9 @@ const SHORT: Partial<Record<RoomId, string>> = {
 export default function Minimap() {
   const mode = useGame((s) => s.mode);
   const thiefRoom = useGame((s) => s.room);
-  const watching = mode.kind === "spectator" ? mode.watching : null;
+  // a roaming spectator sees the guards in whichever room the thief is in
+  const watching =
+    mode.kind === "spectator" ? (mode.roam ? thiefRoom : mode.watching) : null;
   // the thief must not get guard positions for free
   const showGuards = mode.kind !== "thief";
   const thief = useRef<SVGCircleElement>(null);
@@ -85,7 +87,7 @@ export default function Minimap() {
       </div>
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="block h-[132px] w-[196px] overflow-visible"
+        className="block h-[86px] w-[128px] overflow-visible sm:h-[132px] sm:w-[196px]"
         role="img"
         aria-label="Facility floorplan"
       >

@@ -162,6 +162,22 @@ export const WATCHED_ROOMS: RoomId[] = ["lobby", "sec", "vault"];
 export const commandChannel = (thiefRoom: RoomId): RoomId | null =>
   WATCHED_ROOMS.includes(thiefRoom) ? thiefRoom : null;
 
+/**
+ * Can this spectator talk to the thief right now?
+ *
+ * A crew of one is always on air - there is nobody to talk over, and they are
+ * following the thief anyway. With a real crew, only the room the thief is
+ * standing in has the channel.
+ */
+export function channelOpen(
+  thiefRoom: RoomId,
+  watching: RoomId | null,
+  soleSpectator: boolean,
+): boolean {
+  if (soleSpectator) return true;
+  return watching !== null && commandChannel(thiefRoom) === watching;
+}
+
 export function roomAt(x: number, z: number): RoomId {
   for (const r of ROOMS) {
     if (r.id === "outside") continue;
@@ -660,15 +676,19 @@ export const MARKERS: MarkerDef[] = [
     labelOffset: [0, 1.0, 0],
   },
   {
-    id: "vault-vent-override",
-    kind: "note",
-    label: "Vent Override",
-    sub: "Scan for intel",
+    // The way out. Hidden until the spectator posted to the vault scans it, so
+    // the run has a second job running alongside the keycard: the thief cannot
+    // leave this way until their crew has found the hatch for them.
+    id: "vault-vent",
+    kind: "vent",
+    label: "Extraction vent",
+    sub: "jump in to get out",
     reveal: "discovery",
     room: "vault",
     color: C.cyan,
-    position: [18.0, 2.5, 2.0],
-    labelOffset: [0, 0.7, 0],
+    position: [21.85, 1.05, 2.0],
+    labelOffset: [-0.4, 0.9, 0],
+    rotationY: -Math.PI / 2,
   },
   {
     id: "vault-deposit-box",

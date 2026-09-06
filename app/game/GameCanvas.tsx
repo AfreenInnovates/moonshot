@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { KeyboardControls } from "@react-three/drei";
 import { Physics } from "@react-three/rapier";
@@ -23,10 +23,37 @@ const MAP = [
   { name: "right", keys: ["ArrowRight", "KeyD"] },
   { name: "sprint", keys: ["ShiftLeft", "ShiftRight"] },
   { name: "use", keys: ["KeyE"] },
+  { name: "jump", keys: ["Space"] },
 ];
+
+/**
+ * Space is the jump key, and the browser has its own ideas about it: it scrolls
+ * the page, and if the player last clicked a HUD button it re-presses that
+ * button. Swallow it over the game, but leave it alone in a text field.
+ */
+function useSpaceForJumpOnly() {
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        el?.isContentEditable
+      )
+        return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+}
 
 export default function GameCanvas() {
   const isHost = useIsHost();
+  useSpaceForJumpOnly();
 
   return (
     <KeyboardControls map={MAP}>

@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { createNet } from "./net";
 import { resolveRoom } from "./net/roles";
-import { commandChannel } from "./level";
+import { channelOpen } from "./level";
 import { useGame } from "./store";
 import type { CommandCode } from "./commands";
 import {
@@ -248,8 +248,9 @@ export const useSession = create<SessionState>()((set, get) => ({
     if (!s.code || !s.myId || !s.net || room?.phase !== "playing" || me?.role !== "spectator") return;
     // the sector the thief is standing in owns the channel; everyone else is
     // off air, so two spectators can never talk over each other
-    if (!me.watching || commandChannel(useGame.getState().room) !== me.watching)
-      return;
+    const sole =
+      room.players.filter((p) => p.role === "spectator").length <= 1;
+    if (!channelOpen(useGame.getState().room, me.watching, sole)) return;
     s.net.send({ type: "command", command, by: s.myId, t: Date.now() });
   },
 

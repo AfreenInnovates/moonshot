@@ -88,6 +88,7 @@ export default function NetSync() {
       keycard: s.keycard,
       codeFound: s.codeFound,
       vaultOpen: s.vaultOpen,
+      ventOpen: s.ventOpen,
       alarmDisabled: s.alarmDisabled,
       escaped: s.escaped,
       down: s.hp <= 0,

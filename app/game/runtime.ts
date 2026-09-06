@@ -30,9 +30,20 @@ export const runtime = {
   /** targets streamed in from the thief's client (spectator clients only) */
   netThief: null as null | { x: number; y: number; z: number; yaw: number },
   netGuards: {} as Record<string, [number, number, number]>,
-  /** what pressing E would do right now */
-  useTarget: null as null | { kind: "keypad" | "alarm" | "door"; id: string },
+  /** what pressing E - or, for a vent, Space - would do right now */
+  useTarget: null as null | {
+    kind: "keypad" | "alarm" | "door" | "vent";
+    id: string;
+  },
   lastTrapHit: -10,
+
+  /* --- input the thief's client reads, whatever device produced it ------- */
+  /** perf-clock stamp of the last jump press, consumed by the next frame */
+  jumpAt: -1e9,
+  /** on-screen stick, -1..1 on each axis; zero when nothing is touching it */
+  touchMove: { x: 0, y: 0 },
+  /** look delta in pixels accumulated since the last frame drained it */
+  touchLook: { dx: 0, dy: 0 },
 };
 
 export function guardState(id: string) {
