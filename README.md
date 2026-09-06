@@ -23,6 +23,11 @@ A room fills up, a **ten second countdown** runs, then the roles are drawn:
 - **everyone else a spectator**, each posted to exactly one room — lobby, security or vault — and
   they cannot leave it. Three spectators covers the building; fewer means blind spots.
 
+Rooms fill in a fixed order — lobby, then security, then vault — so the set covered is always the
+sensible one; only *who* gets which is random. The exception is a crew of one: a single spectator
+would be stuck in one room while the run needs another, so they **roam** with the thief instead
+and are always on the command channel.
+
 The draw is deterministic from a seed on the room record, so every client lands on the same result
 the moment the clock hits zero — nothing waits on the host's tab being awake.
 
@@ -56,11 +61,32 @@ shared knowledge. A room a spectator is *not* posted to stays sealed to them.
 
 ## Controls
 
-- `WASD` move, `Shift` run, `E` interact
+Desktop:
+
+- `WASD` move, `Shift` run, `Space` jump, `E` interact
 - Thief: click to look around (pointer lock, falls back to click-drag)
 - Spectator: fixed view (scroll to zoom), Watch/Discover to switch layer. A posted spectator's
   room never rotates or pans, so "left" always means the thief's left
 - Solo only: `1` / `2` / `3` switch view
+
+Phone (anything with a coarse pointer):
+
+- Thief: stick on the left thumb, drag anywhere to look, `E` and `JUMP` on the right. The jump
+  button becomes `EXIT` when they are standing in the extraction vent.
+- Spectator: the command deck is the whole bottom of the screen; discovery blips are tap targets.
+
+## The run, end to end
+
+1. Walk in from the street through the entrance.
+2. Take the **keycard** from the security room (west door).
+3. Use it on the **keypad** by the round door in the vault room (`E`). That opens the vault *and*
+   releases the extraction vent.
+4. Take the vault contents if you want the score, then **jump into the vent** on the vault room's
+   east wall to get out.
+
+A spectator posted to the vault can scan the vent open early, before the thief ever reaches the
+keypad. The 4-digit code on the note in the security room is a second way to satisfy the keypad,
+not a requirement - a run is always finishable with the keycard alone.
 
 ## How the multiplayer works
 
@@ -158,3 +184,17 @@ Three rules keep the layers honest:
   client see inside this room".
 - **Nothing spectator-only is ever mounted in a thief client** — not the cones, not the labels,
   not the minimap's guard dots.
+
+## Deployment
+
+Production Google sign-in requires these public Vercel variables:
+
+```text
+NEXT_PUBLIC_SPACETIME_AUTH_CLIENT_ID=your-spacetimeauth-client-id
+NEXT_PUBLIC_SITE_URL=https://your-production-domain
+```
+
+Enable Google in the SpacetimeAuth project and allow `https://your-production-domain/` as the
+client redirect and post-logout URI. Publish the module with an account that owns or collaborates
+on `one-heist-spacetime` before deploying the frontend, because the counter and profile tables are
+part of the client schema.
