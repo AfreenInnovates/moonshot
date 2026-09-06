@@ -9,7 +9,7 @@ import {
 } from "./input";
 
 const HINT_KEY = "heist:mobile-joystick-hint:v1";
-const MAX_DISTANCE = 48;
+const MAX_DISTANCE = 40;
 
 export function useTouchDevice() {
   const [touch, setTouch] = useState(false);
@@ -52,7 +52,7 @@ function VirtualJoystick() {
       ref={base}
       role="application"
       aria-label="Virtual movement joystick"
-      className="mobile-joystick grid h-32 w-32 place-items-center rounded-full border-2 border-white/35 bg-[#111216]/75 shadow-[4px_4px_0_rgba(0,0,0,0.45)]"
+      className="mobile-joystick z-40 grid h-28 w-28 place-items-center rounded-full border-2 border-white/35 bg-[#111216]/75 shadow-[4px_4px_0_rgba(0,0,0,0.45)]"
       onPointerDown={(event) => {
         event.preventDefault();
         pointer.current = event.pointerId;
@@ -72,10 +72,10 @@ function VirtualJoystick() {
       onPointerCancel={stop}
       onLostPointerCapture={stop}
     >
-      <span className="pointer-events-none absolute h-20 w-20 rounded-full border border-white/15" />
+      <span className="pointer-events-none absolute h-16 w-16 rounded-full border border-white/15" />
       <span
-        className="pointer-events-none h-12 w-12 rounded-full border-2 border-[#e9ff4f] bg-[#e9ff4f]/25 shadow-[0_0_18px_rgba(233,255,79,0.35)]"
-        style={{ transform: `translate(${knob.x * 42}px, ${knob.y * 42}px)` }}
+        className="pointer-events-none h-10 w-10 rounded-full border-2 border-[#e9ff4f] bg-[#e9ff4f]/25 shadow-[0_0_18px_rgba(233,255,79,0.35)]"
+        style={{ transform: `translate(${knob.x * 36}px, ${knob.y * 36}px)` }}
       />
       <span className="pointer-events-none absolute bottom-2 text-[8px] font-black uppercase tracking-[0.16em] text-white/55">
         move
@@ -101,7 +101,7 @@ function MobileHint() {
 
   if (!visible) return null;
   return (
-    <div className="pointer-events-none fixed bottom-[calc(9.5rem+env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-30 max-w-[12rem] border border-[#e9ff4f] bg-[#111216]/95 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#e9ff4f] shadow-[3px_3px_0_rgba(0,0,0,0.45)]">
+    <div className="pointer-events-none fixed bottom-[calc(8rem+env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-30 max-w-[12rem] border border-[#e9ff4f] bg-[#111216]/95 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#e9ff4f] shadow-[3px_3px_0_rgba(0,0,0,0.45)]">
       Use the joystick to move.
     </div>
   );

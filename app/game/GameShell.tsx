@@ -590,10 +590,10 @@ export default function GameShell({ title }: { title?: string }) {
        <div className="game-top-bar pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3 sm:gap-4 sm:p-4">
         <div className="pointer-events-auto flex max-w-[min(32rem,calc(100vw-1.5rem))] flex-col gap-3">
           <div>
-            <h1 className="text-sm font-bold uppercase tracking-[0.2em] text-zinc-200">
+            <h1 className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-200 sm:text-sm">
               {title ?? "Facility heist"}
             </h1>
-            <p className="text-[11px] text-zinc-500">
+            <p className="game-top-bar-subtitle text-[11px] text-zinc-500">
                {spectator
                  ? "You're a Spectator. Watch your sector. Guide the Thief."
                  : mode.kind === "thief"
@@ -602,14 +602,14 @@ export default function GameShell({ title }: { title?: string }) {
             </p>
           </div>
           {!spectator && (
-            <div className="hud-panel px-3 py-2" style={{ borderColor: `${v.color}66` }}>
+            <div className="game-top-bar-viewpanel hud-panel px-3 py-2" style={{ borderColor: `${v.color}66` }}>
               <div className="text-sm font-bold uppercase tracking-wide" style={{ color: v.color }}>{`${v.n}. ${v.title}`}</div>
               <div className="mt-0.5 text-[11px] leading-snug text-zinc-400">{v.blurb}</div>
             </div>
           )}
         </div>
 
-      <div className="pointer-events-auto flex flex-col items-end gap-2">
+        <div className="pointer-events-auto flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
             {solo && (
               <select
@@ -666,7 +666,7 @@ export default function GameShell({ title }: { title?: string }) {
       </div>
 
       {/* right column */}
-       <div className="pointer-events-none absolute right-3 top-[14rem] flex max-w-[calc(100vw-1.5rem)] flex-col items-end gap-3 sm:right-4 sm:top-[15.5rem]">
+       <div className="game-right-col pointer-events-none absolute right-3 top-[14rem] flex max-w-[calc(100vw-1.5rem)] flex-col items-end gap-3 sm:right-4 sm:top-[15.5rem]">
         {view === "discovery" && (
           <div className="pointer-events-auto">
             <DiscoveryPanel />
@@ -688,9 +688,9 @@ export default function GameShell({ title }: { title?: string }) {
             <span className="border border-white/25 bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-widest text-zinc-300">
               {roomById(room).name}
             </span>
-            <span className="text-[10px] uppercase tracking-wide text-zinc-500">{roomById(room).blurb}</span>
+            <span className="game-stats-room-blurb text-[10px] uppercase tracking-wide text-zinc-500">{roomById(room).blurb}</span>
           </div>
-          <div className="mt-2 text-[11px] text-zinc-200">{objective}</div>
+          <div className="game-stats-objective mt-2 text-[11px] text-zinc-200">{objective}</div>
             <div className="flex flex-wrap gap-4 sm:gap-5">
             <Bar label="HP" value={hp} color="#5dffa8" danger={hp < 35} />
             <Bar

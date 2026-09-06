@@ -78,7 +78,7 @@ export default function Minimap() {
   }, [watching, showGuards]);
 
   return (
-    <div className="hud-panel hud-panel-blue p-2">
+    <div className="game-minimap hud-panel hud-panel-blue p-2">
       <div className="mb-1 flex items-center justify-between text-[9px] uppercase tracking-widest text-zinc-500">
         <span>Floorplan</span>
         <span className="text-zinc-400">{thiefRoom}</span>
@@ -169,13 +169,13 @@ export default function Minimap() {
         />
         <circle ref={thief} r={1.05} fill="#ffd23b" stroke="#000" strokeWidth={0.2} />
       </svg>
-      <div className="mt-1 flex gap-3 text-[9px] text-zinc-500">
+      <div className="game-minimap-legend mt-1 flex gap-3 text-[9px] text-zinc-500">
         <span className="text-yellow-300">● thief</span>
         <span className="text-yellow-300">→ heading</span>
         {showGuards && <span className="text-sky-400">● guard</span>}
         {watching && <span className="text-emerald-400">▭ your room</span>}
       </div>
-      <div className="mt-1 text-[9px] uppercase tracking-widest text-zinc-600">
+      <div className="game-minimap-legend mt-1 text-[9px] uppercase tracking-widest text-zinc-600">
         {roomById(thiefRoom).name} / live position
       </div>
     </div>
